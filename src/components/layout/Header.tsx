@@ -49,10 +49,9 @@ export function Header({
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { toggleMobileSidebar } = useLayout();
 
-  const handleLogout = () => {
-    localStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_token');
-    navigate('/');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
   };
 
   useEffect(() => {

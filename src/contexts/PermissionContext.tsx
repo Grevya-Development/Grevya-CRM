@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { getCurrentUser, fetchUserPermissions } from "@/api/permissionApi";
+import { fetchUserPermissions } from "@/api/permissionApi";
+import { supabase } from "@/supabase/supabaseClient";
 
 type Permission = {
   module: string;
@@ -36,10 +37,13 @@ export const PermissionProvider = ({ children }: { children: React.ReactNode }) 
 
   const loadPermissions = async () => {
     try {
-      const user = await getCurrentUser();
-      if (!user) return;
-
-      const perms = await fetchUserPermissions(user.id);
+      // Signed-out visitors (e.g. on the login page) simply have no permissions.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setPermissions([]);
+        return;
+      }
+      const perms = await fetchUserPermissions(session.user.id);
       setPermissions(perms);
     } catch (err) {
       console.error("Permission load error:", err);
@@ -52,6 +56,14 @@ export const PermissionProvider = ({ children }: { children: React.ReactNode }) 
       setLoading(false);
     };
     init();
+
+    // Reload after sign-in / sign-out so buttons match the current user without a page refresh.
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        loadPermissions();
+      }
+    });
+    return () => data.subscription.unsubscribe();
   }, []);
 
   const permissionMap = useMemo(() => {

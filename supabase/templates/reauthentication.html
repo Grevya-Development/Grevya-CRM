@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Confirm it's you</title>
+</head>
+<body style="margin:0;padding:0;background:#F3F5F9;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your verification code for Grevya CRM.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F3F5F9;">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+      <tr><td style="padding:0 4px 20px;">
+        <img src="https://crm.grevya.com/grevya-logo.png" width="132" height="48" alt="Grevya" style="display:block;border:0;outline:none;width:132px;height:48px;">
+      </td></tr>
+      <tr><td style="background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #E5E7EB;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td width="25%" style="height:4px;background:#F25022;font-size:0;line-height:0;">&nbsp;</td><td width="25%" style="height:4px;background:#FFB900;font-size:0;line-height:0;">&nbsp;</td><td width="25%" style="height:4px;background:#84B900;font-size:0;line-height:0;">&nbsp;</td><td width="25%" style="height:4px;background:#00A3EE;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+        <div style="padding:36px 36px 32px;font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1F2937;">
+          <h1 style="margin:0 0 18px;font-size:22px;line-height:30px;font-weight:700;color:#0B1A3C;">Confirm it's you</h1>
+          <p style="margin:0 0 14px;font-size:15px;line-height:24px;">{{ if .Data.full_name }}Hi {{ .Data.full_name }},{{ else }}Hi,{{ end }}</p><p style="margin:0 0 14px;font-size:15px;line-height:24px;">Enter this code in Grevya CRM to confirm your request:</p>
+<div style="margin:24px 0 8px;padding:16px 0;border-radius:8px;background:#F3F5F9;text-align:center;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:30px;font-weight:700;letter-spacing:8px;color:#0B1A3C;">{{ .Token }}</div><p style="margin:0 0 14px;font-size:15px;line-height:24px;"><span style="font-size:13px;color:#6B7280;">The code expires shortly. Never share it with anyone.</span></p>
+        </div>
+      </td></tr>
+      <tr><td style="padding:20px 4px 0;font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;line-height:18px;color:#6B7280;">
+        Requested for {{ .Email }}. If you didn't expect this email, you can safely ignore it.<br>
+        Grevya CRM &middot; For Grevya team members only &middot; <a href="{{ .SiteURL }}" style="color:#6B7280;">Open Grevya CRM</a>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>

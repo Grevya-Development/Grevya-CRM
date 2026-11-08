@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { CurrencyProvider } from "@/hooks/useCurrency";
-import Landing from "./pages/Landing";
+import UpdatePassword from "./pages/UpdatePassword";
+import { RequireAuth, RootRedirect } from "./components/auth/RequireAuth";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
@@ -70,11 +71,7 @@ const queryClient = new QueryClient();
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <Landing />,
-  },
-  {
-    path: "/landing",
-    element: <Landing />,
+    element: <RootRedirect />,
   },
   {
     path: "/login",
@@ -90,10 +87,16 @@ const router = createBrowserRouter([
     element: <ForgotPassword />,
   },
   {
+    path: "/update-password",
+    element: <UpdatePassword />,
+  },
+  {
     element: (
-      <MainLayout>
-        <Outlet />
-      </MainLayout>
+      <RequireAuth>
+        <MainLayout>
+          <Outlet />
+        </MainLayout>
+      </RequireAuth>
     ),
     children: [
       { path: "dashboard", element: <Dashboard /> },
