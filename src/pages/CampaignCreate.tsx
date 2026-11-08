@@ -42,6 +42,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Drawer, Table, Space, Tooltip, Modal } from 'antd';
 import * as XLSX from 'xlsx';
+import { localInputToISO, toLocalInput } from "@/lib/dateTime";
 
 export default function CampaignCreate() {
     const { id } = useParams();
@@ -85,7 +86,7 @@ export default function CampaignCreate() {
 
     // Delivery & Review State
     const [deliveryType, setDeliveryType] = useState<'now' | 'later'>('now');
-    const [scheduledDate, setScheduledDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [scheduledDate, setScheduledDate] = useState<string>(toLocalInput(new Date()).slice(0, 10));
     const [scheduledTime, setScheduledTime] = useState<string>('09:00');
 
     // Audience State
@@ -322,7 +323,8 @@ export default function CampaignCreate() {
 
         try {
             const status = deliveryType === 'now' ? 'sending' : 'scheduled';
-            const scheduled_at = deliveryType === 'later' ? `${scheduledDate}T${scheduledTime}:00` : null;
+            // Local date + time from the form, saved as an absolute timestamp.
+            const scheduled_at = deliveryType === 'later' ? localInputToISO(`${scheduledDate}T${scheduledTime}`) : null;
 
             const result = await campaignService.saveCampaign({
                 ...campaignData,

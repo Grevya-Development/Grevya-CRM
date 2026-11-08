@@ -23,6 +23,7 @@ import log from '@/utils/logger'
 import { FloatingLabelInput, FloatingLabelTextarea } from '@/components/ui/floating-label-input';
 import { DatePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
+import { localInputToISO, toLocalInput } from "@/lib/dateTime";
 
 declare global {
     interface Window {
@@ -46,8 +47,8 @@ export function CreateMeetingForm({ entityId, entityType, onSuccess, onCancel }:
 
     const [formData, setFormData] = useState({
         subject: '',
-        start: new Date().toISOString().slice(0, 16),
-        end: new Date(Date.now() + 3600000).toISOString().slice(0, 16),
+        start: toLocalInput(new Date()),
+        end: toLocalInput(new Date(Date.now() + 3600000)),
         duration: '01:00',
         allDay: false,
         location: 'Online Meeting',
@@ -76,12 +77,18 @@ export function CreateMeetingForm({ entityId, entityType, onSuccess, onCancel }:
 
     useEffect(() => {
         if (!entityId) return;
-        const fetchCust = async () => {
-            const { data } = await supabase.from('crm_customers').select('name').eq('id', entityId).single();
-            if (data) setCustomerName(data.name);
+        // Show the related record's name: a customer, or the lead's name for lead meetings.
+        const fetchName = async () => {
+            if (entityType === 'lead') {
+                const { data } = await supabase.from('crm_leads').select('lead_name, subject').eq('id', entityId).maybeSingle();
+                if (data) setCustomerName(data.lead_name || data.subject || null);
+            } else {
+                const { data } = await supabase.from('crm_customers').select('name').eq('id', entityId).maybeSingle();
+                if (data) setCustomerName(data.name);
+            }
         };
-        fetchCust();
-    }, [entityId]);
+        fetchName();
+    }, [entityId, entityType]);
 
     const calculateDuration = (start: string, end: string) => {
         const startDate = new Date(start);
@@ -155,8 +162,8 @@ export function CreateMeetingForm({ entityId, entityType, onSuccess, onCancel }:
                 entity_type: entityType,
                 subject: formData.subject,
                 description: formData.description,
-                start_time: formData.start,
-                end_time: formData.end,
+                start_time: localInputToISO(formData.start),
+                end_time: localInputToISO(formData.end),
                 location: formData.location,
                 video_url: videoUrl,
                 duration: calculateDuration(formData.start, formData.end),

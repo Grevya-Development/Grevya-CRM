@@ -131,7 +131,7 @@ export type CustomerFormData = {
     source: string;
 };
 
-export type LeadStage = 'Qualification' | 'Need Analysis' | 'Value Proposition' | 'Identify Decision Makers' | 'Proposal' | 'Negotiation' | 'Won' | 'Lost';
+export type LeadStage = 'Qualification' | 'Needs Analysis' | 'Value Proposition' | 'Identify Decision Makers' | 'Proposal' | 'Negotiation' | 'Won' | 'Lost';
 
 export interface Lead {
     id: string;

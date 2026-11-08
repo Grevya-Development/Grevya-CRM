@@ -269,7 +269,7 @@ export default function Leads() {
                   <Trophy size={20} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700/70">Won Monthly</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700/70">Won Value</p>
                   <p className="text-xl font-bold text-slate-900">{formatCurrency(stats.wonValue)}</p>
                 </div>
               </div>

@@ -403,7 +403,10 @@ I’m your AI assistant and I’m here to assist you with anything you need rela
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: "assistant",
-                content: `❌ Error: ${error.message || "AI service unavailable. Please check backend connection."}`,
+                // A network failure means the AI service isn't running or reachable.
+                content: /failed to fetch|networkerror|load failed/i.test(error?.message || "")
+                    ? "The AI assistant isn't available right now. Please try again later, or ask an administrator to check the AI service."
+                    : `Sorry, I couldn't answer that: ${error?.message || "unknown error"}`,
                 timestamp: new Date(),
             };
             setMessages((prev) => [...prev, errorMessage]);

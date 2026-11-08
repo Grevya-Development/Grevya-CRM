@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { FloatingLabelInput, FloatingLabelTextarea } from '@/components/ui/floating-label-input';
 import { DatePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
+import { localInputToISO } from "@/lib/dateTime";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -56,7 +57,7 @@ const ActivityPopup: React.FC<ActivityPopupProps> = ({
                 title: taskData.title || "",
                 description: taskData.description || "",
                 assignedTo: taskData.assigned_to || "",
-                date: dueDate ? dueDate.toISOString().split("T")[0] : "",
+                date: dueDate ? format(dueDate, "yyyy-MM-dd") : "",
                 time: dueDate
                     ? dueDate.toTimeString().slice(0, 5)
                     : "",
@@ -104,7 +105,7 @@ const ActivityPopup: React.FC<ActivityPopupProps> = ({
                 return;
             }
 
-            const combinedDateTime = `${formData.date}T${formData.time}`;
+            const combinedDateTime = localInputToISO(`${formData.date}T${formData.time}`);
 
             let error;
 

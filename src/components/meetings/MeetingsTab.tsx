@@ -18,6 +18,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { localInputToISO, toLocalInput } from "@/lib/dateTime";
 
 type FilterType = "all" | "upcoming" | "completed";
 
@@ -243,8 +244,8 @@ export function MeetingsTab({ entityId, entityType, onCountChange }: { entityId:
                                                     <DropdownMenuItem
                                                         onClick={() => {
                                                             setSelectedMeeting(meeting);
-                                                            setNewStartTime(meeting.start_time?.slice(0, 16));
-                                                            setNewEndTime(meeting.end_time?.slice(0, 16));
+                                                            setNewStartTime(toLocalInput(meeting.start_time));
+                                                            setNewEndTime(toLocalInput(meeting.end_time));
                                                             setRescheduleOpen(true);
                                                         }}
                                                     >
@@ -368,8 +369,8 @@ export function MeetingsTab({ entityId, entityType, onCountChange }: { entityId:
                                     const { error } = await supabase
                                         .from("crm_meetings")
                                         .update({
-                                            start_time: newStartTime,
-                                            end_time: newEndTime,
+                                            start_time: localInputToISO(newStartTime),
+                                            end_time: localInputToISO(newEndTime),
                                             duration: calculateDuration(newStartTime, newEndTime),
                                         })
                                         .eq("id", selectedMeeting.id);

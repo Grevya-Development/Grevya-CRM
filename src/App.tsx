@@ -65,6 +65,9 @@ import CampaignCreate from "@/pages/CampaignCreate";
 import CampaignDetails from "@/pages/CampaignDetails";
 import SalesTargetDetails from "./pages/SalesTargetDetails";
 import { MyLeadsPage } from "./pages/MyLeads";
+import Invoices from "./pages/Invoices";
+import Orders from "./pages/Orders";
+import Payments from "./pages/Payments";
 
 const queryClient = new QueryClient();
 
@@ -100,6 +103,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: "dashboard", element: <Dashboard /> },
+      { path: "my-leads", element: <MyLeadsPage /> },
       { path: "contacts", element: <Contacts /> },
       { path: "contacts/add", element: <AddContact /> },
       { path: "contacts/edit/:id", element: <AddContact /> },
@@ -128,24 +132,9 @@ const router = createBrowserRouter([
       { path: "quotations/:id", element: <AddQuotation /> },
       { path: "invoices/:id", element: <AddInvoice /> },
       { path: "tasks", element: <Tasks /> },
-      {
-        path: "orders",
-        element: (
-          <UnderDevelopment title="Orders" subtitle="Manage sales orders" />
-        ),
-      },
-      {
-        path: "invoices",
-        element: (
-          <UnderDevelopment title="Invoices" subtitle="Manage invoices" />
-        ),
-      },
-      {
-        path: "payments",
-        element: (
-          <UnderDevelopment title="Payments" subtitle="Manage payments" />
-        ),
-      },
+      { path: "orders", element: <Orders /> },
+      { path: "invoices", element: <Invoices /> },
+      { path: "payments", element: <Payments /> },
       { path: "calendar", element: <Calendar /> },
       { path: "ai-hub", element: <AIHub /> },
       { path: "sales-targets", element: <SalesTargets /> },
@@ -264,10 +253,6 @@ const router = createBrowserRouter([
   {
     path: "*",
     element: <NotFound />,
-  },
-  {
-    path: "my-leads",
-    element: <MyLeadsPage />,
   },
 ]);
 

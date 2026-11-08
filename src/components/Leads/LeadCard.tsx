@@ -42,7 +42,7 @@ interface LeadsCardProps {
 
 const stageBorderColors: Record<string, string> = {
   'Qualification': "border-l-4 border-l-info",
-  "Need Analysis": "border-l-4 border-l-indigo-500",
+  "Needs Analysis": "border-l-4 border-l-indigo-500",
   "Value Proposition": "border-l-4 border-l-purple-500",
   "Identify Decision Makers": "border-l-4 border-l-primary",
   "Proposal": "border-l-4 border-l-primary",
@@ -234,7 +234,7 @@ export function LeadsCard({ lead, onLeadUpdate, onLeadDelete, leadIds }: LeadsCa
         "w-full h-[105px] rounded-lg border border-slate-200 bg-white p-1.5 cursor-pointer",
         "flex flex-col justify-between overflow-hidden shadow-sm hover:shadow-md transition-all relative pl-2 pr-4",
         lead.lead_stage === 'Qualification' && 'border-l-[4px] border-l-primary',
-        lead.lead_stage === 'Need Analysis' && 'border-l-[4px] border-l-indigo-400',
+        lead.lead_stage === 'Needs Analysis' && 'border-l-[4px] border-l-indigo-400',
         lead.lead_stage === 'Value Proposition' && 'border-l-[4px] border-l-purple-400',
         lead.lead_stage === 'Identify Decision Makers' && 'border-l-[4px] border-l-primary',
         lead.lead_stage === 'Proposal' && 'border-l-[4px] border-l-slate-400',

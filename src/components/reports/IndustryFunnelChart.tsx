@@ -30,13 +30,13 @@ const COLORS = [
 
 const stageOrder = [
     "Qualification",
-    "Identify Decision Makers",
-    "Need Analysis",
+    "Needs Analysis",
     "Value Proposition",
+    "Identify Decision Makers",
     "Proposal",
+    "Negotiation",
     "Won",
-    "Lost",
-    "Negotiation"
+    "Lost"
 ];
 
 const LeadStageFunnelChart = ({ leads, onStageClick }: Props) => {

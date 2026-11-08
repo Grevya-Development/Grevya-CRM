@@ -74,25 +74,46 @@ export function GlobalSearch({ className }: { className?: string }) {
         setLoading(true);
         const searchResults: SearchResult[] = [];
 
+        // Commas and brackets have meaning inside the API's or() filter, so strip them.
+        const q = searchQuery.replace(/[,()%]/g, ' ').trim();
+
         try {
 
-            const [contactsRes, customersRes, productsRes] = await Promise.all([
+            const [contactsRes, customersRes, productsRes, leadsRes] = await Promise.all([
                 supabase
                     .from('crm_contacts')
                     .select('id, name, email, mobile_no, designation, customer_id, customer:crm_customers(name)')
-                    .or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,mobile_no.ilike.%${searchQuery}%,designation.ilike.%${searchQuery}%`)
+                    .or(`name.ilike.%${q}%,email.ilike.%${q}%,mobile_no.ilike.%${q}%,designation.ilike.%${q}%`)
                     .limit(5),
                 supabase
                     .from('crm_customers')
                     .select('id, name, industry, website_link')
-                    .or(`name.ilike.%${searchQuery}%,industry.ilike.%${searchQuery}%,website_link.ilike.%${searchQuery}%`)
+                    .or(`name.ilike.%${q}%,industry.ilike.%${q}%,website_link.ilike.%${q}%`)
                     .limit(5),
                 supabase
                     .from('products')
                     .select('id, name, sku, base_price')
-                    .or(`name.ilike.%${searchQuery}%,sku.ilike.%${searchQuery}%`)
+                    .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
+                    .limit(5),
+                supabase
+                    .from('crm_leads')
+                    .select('id, lead_name, subject, lead_number, lead_stage, crm_customers(name)')
+                    .not('is_deleted', 'is', true)
+                    .or(`lead_name.ilike.%${q}%,subject.ilike.%${q}%,email.ilike.%${q}%,lead_number.ilike.%${q}%`)
                     .limit(5)
             ]);
+
+            if (leadsRes.data) {
+                leadsRes.data.forEach((l: any) => {
+                    searchResults.push({
+                        id: l.id,
+                        title: l.lead_name || l.subject || l.lead_number,
+                        subtitle: [l.lead_number, l.lead_stage, l.crm_customers?.name].filter(Boolean).join(' • '),
+                        category: 'Leads',
+                        path: `/leads/${l.id}`
+                    });
+                });
+            }
 
             if (contactsRes.data) {
                 contactsRes.data.forEach((c: any) => {
@@ -127,7 +148,7 @@ export function GlobalSearch({ className }: { className?: string }) {
                         title: p.name,
                         subtitle: `${p.sku} • ₹${p.base_price}`,
                         category: 'Product',
-                        path: '/sales-quotation'
+                        path: `/products/${p.id}`
                     });
                 });
             }

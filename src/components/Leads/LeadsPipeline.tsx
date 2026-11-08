@@ -14,6 +14,7 @@ import {
 } from '@dnd-kit/core';
 import { Lead } from '@/types';
 import { supabase } from '@/supabase/supabaseClient';
+import { getCurrentUserName } from '@/lib/currentUser';
 import { useCurrency } from '@/hooks/useCurrency';
 import { Button } from '@/components/ui/button';
 import { Maximize2, Loader2 } from 'lucide-react';
@@ -25,7 +26,7 @@ import { LostReasonModal } from './LostReasonModal';
 
 export const stages = [
   { key: 'Qualification', label: 'Qualification', color: 'bg-info' },
-  { key: 'Need Analysis', label: 'Need Analysis', color: 'bg-primary/60' },
+  { key: 'Needs Analysis', label: 'Needs Analysis', color: 'bg-primary/60' },
   { key: 'Value Proposition', label: 'Value Proposition', color: 'bg-purple-500' },
   { key: 'Identify Decision Makers', label: 'Identify Decision Makers', color: 'bg-primary' },
   { key: 'Proposal', label: 'Proposal', color: 'bg-primary' },
@@ -111,7 +112,7 @@ export function LeadsPipeline({ Leads, onLeadsChange }: LeadsPipelineProps) {
         lead_id: id,
         action: 'STAGE_CHANGE',
         details: `Stage updated from ${oldStage} to ${newStage}`,
-        performed_by: 'Current User'
+        performed_by: await getCurrentUserName()
       }]);
 
     } catch {
@@ -149,7 +150,7 @@ export function LeadsPipeline({ Leads, onLeadsChange }: LeadsPipelineProps) {
         lead_id: id,
         action: 'STAGE_CHANGE',
         details: `Stage updated from ${oldStage} to ${newStage}. Reason: ${reason}`,
-        performed_by: 'Current User'
+        performed_by: await getCurrentUserName()
       }]);
 
       setIsLostModalOpen(false);
@@ -243,7 +244,7 @@ export function LeadsPipeline({ Leads, onLeadsChange }: LeadsPipelineProps) {
           lead_id: data.id,
           action: 'CREATED',
           details: 'Lead created via inline form',
-          performed_by: 'Current User'
+          performed_by: await getCurrentUserName()
         }]);
 
         toast.success("Lead created successfully");
