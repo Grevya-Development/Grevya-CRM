@@ -18,8 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "supabase", "templates");
-// Served from the live app so email clients that block raw GitHub images still show it.
-const LOGO = "https://crm.grevya.com/grevya-logo.png";
+// Hosted on ImgBB (640x317, transparent PNG).
+const LOGO = "https://i.ibb.co/rndnp23/Grevya-Logo-1.png";
 const NAVY = "#0B1A3C", BLUE = "#0B64F4", TEXT = "#1F2937", MUTED = "#6B7280", BG = "#F3F5F9";
 const BRAND_BAR = ["#F25022", "#FFB900", "#84B900", "#00A3EE"];
 const FONT = "'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
@@ -57,8 +57,8 @@ function layout({ preheader, heading, body, footerNote }) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
   <tr><td align="center" style="padding:32px 16px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
-      <tr><td style="padding:0 4px 20px;">
-        <img src="${LOGO}" width="132" height="48" alt="Grevya" style="display:block;border:0;outline:none;width:132px;height:48px;">
+      <tr><td style="padding:0 0 12px;">
+        <img src="${LOGO}" width="150" height="74" alt="Grevya" style="display:block;border:0;outline:none;width:150px;height:74px;">
       </td></tr>
       <tr><td style="background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #E5E7EB;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${bar}</tr></table>
