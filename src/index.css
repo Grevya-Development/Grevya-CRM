@@ -1,0 +1,429 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 214 32% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 214 95% 93%;
+    --accent-foreground: 217 91% 40%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 50%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 222 68% 14%;
+    /* deep navy */
+    --sidebar-foreground: 0 0% 100%;
+    /* white text */
+
+    --sidebar-primary: 224 76% 48%;
+    /* blue highlight */
+    --sidebar-primary-foreground: 0 0% 100%;
+
+    --sidebar-accent: 224 64% 24%;
+    /* hover */
+    --sidebar-accent-foreground: 0 0% 100%;
+
+    --sidebar-border: 224 40% 28%;
+    --sidebar-ring: 224 76% 48%;
+
+
+    --chart-1: 217 91% 50%;
+    --chart-2: 142 76% 36%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 199 89% 48%;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 214 32% 91%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 214 32% 91%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 214 32% 91%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 47% 18%;
+    --secondary-foreground: 214 32% 91%;
+
+    --muted: 222 47% 15%;
+    --muted-foreground: 215 16% 60%;
+
+    --accent: 222 47% 20%;
+    --accent-foreground: 217 91% 70%;
+
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 222 47% 20%;
+    --input: 222 47% 20%;
+    --ring: 217 91% 60%;
+
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 214 32% 91%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 47% 12%;
+    --sidebar-accent-foreground: 214 32% 91%;
+    --sidebar-border: 222 47% 15%;
+    --sidebar-ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Instrument Sans', sans-serif;
+  }
+
+  /* Hide native date/time icons in Chrome/Edge/Safari */
+  input::-webkit-calendar-picker-indicator,
+  input::-webkit-inner-spin-button,
+  input::-webkit-clear-button {
+    display: none !important;
+    -webkit-appearance: none;
+  }
+
+  /* For Firefox */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"] {
+    text-align: left;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-sm border border-border/50 shadow-sm;
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(217 91% 60%) 100%);
+  }
+
+  .gradient-success {
+    background: linear-gradient(135deg, hsl(var(--success)) 0%, hsl(142 76% 45%) 100%);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(217 91% 65%) 100%);
+  }
+
+  /* Utility to hide scrollbar while allowing scroll */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Smooth transition timing */
+  .transition-premium {
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar-content-height {
+    transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: grid;
+    grid-template-rows: 0fr;
+  }
+
+  .sidebar-content-height.expanded {
+    grid-template-rows: 1fr;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 3s ease-in-out infinite;
+  }
+
+  .animate-gradient-x {
+    animation: gradientX 3s linear infinite;
+    background-size: 200% auto;
+  }
+
+  .animate-fade-in-left {
+    animation: fadeInLeft 0.8s ease-out;
+  }
+
+  .animate-fade-in-right {
+    animation: fadeInRight 0.8s ease-out;
+  }
+
+  .animate-scale-up {
+    animation: scaleUp 0.6s ease-out;
+  }
+
+  .bg-gradient-secondary {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--secondary)) 50%, hsl(var(--muted)) 100%);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-thumb-slate-200::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full;
+  }
+
+  .scrollbar-track-transparent::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .hover\:scrollbar-thumb-slate-300:hover::-webkit-scrollbar-thumb {
+    @apply bg-slate-300;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-300;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulseGlow {
+
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes gradientX {
+  0% {
+    background-position: 0% center;
+  }
+
+  50% {
+    background-position: 100% center;
+  }
+
+  100% {
+    background-position: 0% center;
+  }
+}
+
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+
+@layer utilities {
+  .table-header {
+    @apply text-black font-semibold text-sm bg-muted px-4 py-3;
+  }
+}
+
+@layer utilities {
+
+  /* Action icons */
+  .icon-view {
+    @apply text-info hover:text-info/80 cursor-pointer;
+  }
+
+  .icon-edit {
+    @apply text-warning hover:text-warning/80 cursor-pointer;
+  }
+
+  .icon-mail {
+    @apply text-primary hover:text-primary/80 cursor-pointer;
+  }
+
+  .icon-delete {
+    @apply text-destructive hover:text-destructive/80 cursor-pointer;
+  }
+
+  /* Common icon styling */
+  .table-action-icon {
+    @apply w-4 h-4 rounded transition-colors duration-200 hover:bg-muted;
+  }
+}
+
+/* Custom Recipient Table Styles */
+.recipient-table .ant-table {
+  @apply !bg-transparent;
+}
+
+.recipient-table .ant-table-thead > tr > th {
+  @apply !bg-slate-50/50 !border-b !border-slate-100 !py-4;
+}
+
+.recipient-table .ant-table-tbody > tr > td {
+  @apply !border-b !border-slate-50 !py-3;
+}
+
+.recipient-table .ant-table-tbody > tr:hover > td {
+  @apply !bg-blue-50/30;
+}
+
+.recipient-table .ant-pagination {
+  @apply !px-6 !py-4 !m-0 border-t border-slate-100 !bg-slate-50/30;
+}
