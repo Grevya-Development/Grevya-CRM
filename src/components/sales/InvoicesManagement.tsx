@@ -25,7 +25,7 @@ export const InvoicesManagement = () => {
             setLoading(true);
             const { data, error } = await supabase
                 .from('invoices')
-                .select('*, contacts(name)')
+                .select('*, crm_customers(name)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -50,9 +50,9 @@ export const InvoicesManagement = () => {
         },
         {
             title: 'Customer',
-            dataIndex: 'contacts',
+            dataIndex: 'crm_customers',
             key: 'customer',
-            render: (contact: any) => contact?.name || 'Unknown',
+            render: (customer: any) => customer?.name || 'Unknown',
         },
         {
             title: 'Date',
@@ -92,7 +92,7 @@ export const InvoicesManagement = () => {
 
     const filteredInvoices = invoices.filter(inv =>
         inv.invoice_number.toLowerCase().includes(searchText.toLowerCase()) ||
-        (inv as any).contacts?.name?.toLowerCase().includes(searchText.toLowerCase())
+        (inv as any).crm_customers?.name?.toLowerCase().includes(searchText.toLowerCase())
     );
 
     return (

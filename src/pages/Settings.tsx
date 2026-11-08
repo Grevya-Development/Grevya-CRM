@@ -31,6 +31,41 @@ import { GstTreatmentSettings } from '@/components/settings/GstTreatmentSettings
 import { supabase } from '@/supabase/supabaseClient';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { userSettingsService, type CompanySettings } from '@/services/userSettings';
+
+interface GetUsersRow {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+}
+
+interface TeamMember {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  role: string;
+}
+
+const INDUSTRY_OPTIONS = [
+  { value: 'technology', label: 'Technology' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'healthcare', label: 'Healthcare' },
+  { value: 'manufacturing', label: 'Manufacturing' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'education', label: 'Education' },
+  { value: 'services', label: 'Professional Services' },
+  { value: 'other', label: 'Other' },
+];
+
+const initialsOf = (name: string) =>
+  name
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase())
+    .join('') || 'U';
 
 export default function Settings() {
   const { aiEnabled } = useLayout();
@@ -72,55 +107,227 @@ export default function Settings() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) return;
+    if (!user) {
+      setLoadingProfile(false);
+      return;
+    }
 
+    // maybeSingle: a user may not have a crm_profile row yet (it is created on save below)
     const { data, error } = await supabase
       .from('crm_profile')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       toast.error(error.message);
-    } else {
-      setProfile(data);
     }
-    console.log('User Profile:', data);
 
     const { data: roleData } = await supabase
       .from('user_roles')
       .select('roles(name)')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     const roleName = roleData && 'roles' in roleData
       ? (roleData.roles as any)?.name
       : '';
 
-    setProfile({ ...data, role: roleName });
+    setProfile({
+      ...(data ?? {}),
+      id: user.id,
+      email: data?.email || user.email || '',
+      role: roleName || '',
+    });
 
     setLoadingProfile(false);
   };
 
   const handleSaveProfile = async () => {
-    if (!profile) return;
+    if (!profile?.id) return;
 
+    // Save only the fields this form shows (full name + phone).
+    // Upsert so users without a crm_profile row get one created.
     const { error } = await supabase
       .from('crm_profile')
-      .update({
-        full_name: profile.full_name,
-        display_name: profile.display_name,
-        phone_number: profile.phone_number,
-        city: profile.city,
-        state: profile.state,
-        country: profile.country,
-      })
-      .eq('id', profile.id);
+      .upsert(
+        {
+          id: profile.id,
+          email: profile.email || null,
+          full_name: profile.full_name?.trim() || null,
+          phone_number: profile.phone_number?.trim() || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
 
     if (error) {
       toast.error(error.message);
     } else {
       toast.success('Profile updated successfully');
+    }
+  };
+
+  // ---- Team tab: real users from auth (via get_users RPC) + their role ----
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [teamLoaded, setTeamLoaded] = useState(false);
+
+  const fetchTeam = async () => {
+    setLoadingTeam(true);
+    const [usersRes, rolesRes] = await Promise.all([
+      supabase.rpc('get_users'),
+      supabase.from('user_roles').select('user_id, role:roles(name)'),
+    ]);
+
+    if (usersRes.error) {
+      toast.error(`Could not load team members: ${usersRes.error.message}`);
+      setTeamMembers([]);
+    } else {
+      const roleByUser = new Map<string, string>();
+      for (const r of (rolesRes.data ?? []) as { user_id: string; role: { name: string } | { name: string }[] | null }[]) {
+        const role = Array.isArray(r.role) ? r.role[0] : r.role;
+        if (r.user_id && role?.name) roleByUser.set(r.user_id, role.name);
+      }
+      setTeamMembers(
+        ((usersRes.data ?? []) as GetUsersRow[]).map((u) => ({
+          id: u.id,
+          email: u.email ?? '',
+          name: u.full_name?.trim() || u.email || 'Unknown user',
+          avatar_url: u.avatar_url ?? null,
+          role: roleByUser.get(u.id) ?? 'No role',
+        }))
+      );
+    }
+    setTeamLoaded(true);
+    setLoadingTeam(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'team' && !teamLoaded && !loadingTeam) {
+      fetchTeam();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const handleInviteMember = () => {
+    toast.info(
+      `There is no email invite yet. Ask new members to sign up at ${window.location.origin}/signup — you can then change their role in Roles & Access.`,
+      { duration: 10000 }
+    );
+  };
+
+  const goToRolesTab = () => {
+    setActiveTab('roles');
+    navigate('/settings/roles');
+  };
+
+  // ---- Company tab: stored in user_settings.settings.company ----
+  // NOTE: stored per user for now (each user's own user_settings row); there is no
+  // organisation-wide settings table yet.
+  const [company, setCompany] = useState<CompanySettings>({
+    name: '',
+    industry: '',
+    website: '',
+    address: '',
+  });
+  const [companyLoaded, setCompanyLoaded] = useState(false);
+  const [savingCompany, setSavingCompany] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'company' || companyLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const settings = await userSettingsService.getSettings();
+        if (!cancelled && settings?.company) {
+          setCompany({
+            name: settings.company.name ?? '',
+            industry: settings.company.industry ?? '',
+            website: settings.company.website ?? '',
+            address: settings.company.address ?? '',
+          });
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not load company settings');
+      } finally {
+        if (!cancelled) setCompanyLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, companyLoaded]);
+
+  const handleSaveCompany = async () => {
+    setSavingCompany(true);
+    const result = await userSettingsService.updateSettings({
+      company: {
+        name: company.name?.trim() || '',
+        industry: company.industry || '',
+        website: company.website?.trim() || '',
+        address: company.address?.trim() || '',
+      },
+    });
+    setSavingCompany(false);
+    if (result.success) {
+      toast.success('Company settings saved');
+    } else {
+      toast.error(result.error?.message || 'Failed to save company settings');
+    }
+  };
+
+  // ---- Security tab: password change ----
+  const [passwords, setPasswords] = useState({ current: '', next: '', confirm: '' });
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  const handleUpdatePassword = async () => {
+    const { current, next, confirm } = passwords;
+    if (!current || !next || !confirm) {
+      toast.error('Please fill in all password fields');
+      return;
+    }
+    if (next.length < 6) {
+      toast.error('New password must be at least 6 characters');
+      return;
+    }
+    if (next !== confirm) {
+      toast.error('New password and confirmation do not match');
+      return;
+    }
+    if (next === current) {
+      toast.error('New password must be different from the current password');
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        toast.error('You must be signed in to change your password');
+        return;
+      }
+
+      // Verify the current password before changing it.
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: current,
+      });
+      if (verifyError) {
+        toast.error('Current password is incorrect');
+        return;
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: next });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      setPasswords({ current: '', next: '', confirm: '' });
+      toast.success('Password updated successfully');
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
@@ -307,24 +514,22 @@ export default function Settings() {
                 </div>
               </div>
               <div className="grid gap-6 max-w-2xl">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name</Label>
-                    <Input
-                      value={profile?.full_name || ''}
-                      onChange={(e) =>
-                        setProfile({ ...profile, full_name: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" defaultValue="Smith" />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    placeholder="Your full name"
+                    value={profile?.full_name || ''}
+                    disabled={loadingProfile}
+                    onChange={(e) =>
+                      setProfile({ ...profile, full_name: e.target.value })
+                    }
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
+                    id="email"
                     type="email"
                     value={profile?.email || ''}
                     disabled
@@ -333,7 +538,10 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
                   <Input
+                    id="phone"
+                    placeholder="Phone number"
                     value={profile?.phone_number || ''}
+                    disabled={loadingProfile}
                     onChange={(e) =>
                       setProfile({ ...profile, phone_number: e.target.value })
                     }
@@ -341,10 +549,16 @@ export default function Settings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
-                  <Input value={profile?.role || ''} disabled />
+                  <Input id="role" value={profile?.role || ''} disabled />
                 </div>
                 <Separator />
-                <Button className="w-fit" onClick={handleSaveProfile}>Save Changes</Button>
+                <Button
+                  className="w-fit"
+                  onClick={handleSaveProfile}
+                  disabled={loadingProfile || !profile?.id}
+                >
+                  Save Changes
+                </Button>
               </div>
             </div>
           </TabsContent>
@@ -418,15 +632,33 @@ export default function Settings() {
               <div className="space-y-6 max-w-2xl">
                 <div className="space-y-2">
                   <Label htmlFor="currentPassword">Current Password</Label>
-                  <Input id="currentPassword" type="password" />
+                  <Input
+                    id="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    value={passwords.current}
+                    onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
-                  <Input id="newPassword" type="password" />
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    value={passwords.next}
+                    onChange={(e) => setPasswords({ ...passwords, next: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                  <Input id="confirmPassword" type="password" />
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    value={passwords.confirm}
+                    onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
+                  />
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
@@ -441,7 +673,9 @@ export default function Settings() {
                   <Button variant="outline">Enable</Button>
                 </div>
                 <Separator />
-                <Button>Update Password</Button>
+                <Button className="w-fit" onClick={handleUpdatePassword} disabled={updatingPassword}>
+                  {updatingPassword ? 'Updating...' : 'Update Password'}
+                </Button>
               </div>
             </div>
           </TabsContent>
@@ -509,40 +743,56 @@ export default function Settings() {
             <div className="rounded-xl border border-border bg-card p-6 animate-fade-in">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-foreground">Team Members</h3>
-                <Button>Invite Member</Button>
+                <Button onClick={handleInviteMember}>Invite Member</Button>
               </div>
               <div className="space-y-4">
-                {[
-                  { name: 'John Smith', email: 'john@company.com', role: 'Admin' },
-                  { name: 'Jane Doe', email: 'jane@company.com', role: 'Sales Rep' },
-                  { name: 'Mike Johnson', email: 'mike@company.com', role: 'Sales Rep' },
-                ].map((member, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-4 rounded-lg border border-border"
-                  >
-                    <div className="flex items-center gap-4">
-                      <Avatar>
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {member.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-foreground">{member.name}</p>
-                        <p className="text-sm text-muted-foreground">{member.email}</p>
+                {loadingTeam ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">
+                    Loading team members...
+                  </p>
+                ) : teamMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">
+                    No team members found.
+                  </p>
+                ) : (
+                  teamMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between p-4 rounded-lg border border-border"
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <Avatar>
+                          {member.avatar_url ? (
+                            <img
+                              src={member.avatar_url}
+                              alt={member.name}
+                              className="h-full w-full object-cover rounded-full"
+                            />
+                          ) : (
+                            <AvatarFallback className="bg-primary/10 text-primary">
+                              {initialsOf(member.name)}
+                            </AvatarFallback>
+                          )}
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="font-medium text-foreground truncate">{member.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">{member.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm text-muted-foreground">{member.role}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={goToRolesTab}
+                          title="Change roles in Roles & Access"
+                        >
+                          Edit
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-sm text-muted-foreground">{member.role}</span>
-                      <Button variant="ghost" size="sm">
-                        Edit
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </TabsContent>
@@ -556,35 +806,64 @@ export default function Settings() {
               <div className="grid gap-6 max-w-2xl">
                 <div className="space-y-2">
                   <Label htmlFor="companyName">Company Name</Label>
-                  <Input id="companyName" defaultValue="Acme Corporation" />
+                  <Input
+                    id="companyName"
+                    placeholder="Your company name"
+                    value={company.name ?? ''}
+                    disabled={!companyLoaded}
+                    onChange={(e) => setCompany({ ...company, name: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="industry">Industry</Label>
-                  <Select defaultValue="technology">
-                    <SelectTrigger>
+                  <Select
+                    // key forces a remount so the placeholder shows again when the value is empty
+                    key={company.industry ? 'industry-set' : 'industry-empty'}
+                    value={company.industry || undefined}
+                    onValueChange={(v) => setCompany({ ...company, industry: v })}
+                    disabled={!companyLoaded}
+                  >
+                    <SelectTrigger id="industry">
                       <SelectValue placeholder="Select industry" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="technology">Technology</SelectItem>
-                      <SelectItem value="finance">Finance</SelectItem>
-                      <SelectItem value="healthcare">Healthcare</SelectItem>
-                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                      {INDUSTRY_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="website">Website</Label>
-                  <Input id="website" defaultValue="https://acme.com" />
+                  <Input
+                    id="website"
+                    type="url"
+                    placeholder="https://example.com"
+                    value={company.website ?? ''}
+                    disabled={!companyLoaded}
+                    onChange={(e) => setCompany({ ...company, website: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="address">Address</Label>
                   <Input
                     id="address"
-                    defaultValue="123 Business Ave, San Francisco, CA 94102"
+                    placeholder="Street, city, state, postal code"
+                    value={company.address ?? ''}
+                    disabled={!companyLoaded}
+                    onChange={(e) => setCompany({ ...company, address: e.target.value })}
                   />
                 </div>
                 <Separator />
-                <Button className="w-fit">Save Company Settings</Button>
+                <Button
+                  className="w-fit"
+                  onClick={handleSaveCompany}
+                  disabled={!companyLoaded || savingCompany}
+                >
+                  {savingCompany ? 'Saving...' : 'Save Company Settings'}
+                </Button>
               </div>
             </div>
           </TabsContent>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,89 +24,228 @@ import {
   Filter,
   Download,
   Clock,
-  User,
   FileEdit,
   Trash2,
   Plus,
-  Eye,
-  LogIn,
-  LogOut,
+  RefreshCw,
+  Activity,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@/supabase/supabaseClient';
+
+/** How many of the newest entries to show (taken across all log tables). */
+const LOG_LIMIT = 100;
+
+type Resource = 'Lead' | 'Quotation' | 'Invoice' | 'Sales Team';
 
 interface AuditLog {
   id: string;
   timestamp: string;
-  user: { name: string; email: string };
-  action: 'create' | 'update' | 'delete' | 'view' | 'login' | 'logout' | 'export';
-  resource: string;
-  resourceId: string;
+  user: string;
+  action: string;
+  resource: Resource;
   details: string;
-  ipAddress: string;
 }
 
-const auditLogs: AuditLog[] = [
-  { id: '1', timestamp: '2024-12-05T14:30:00', user: { name: 'John Smith', email: 'john@company.com' }, action: 'update', resource: 'Leads', resourceId: 'Leads-001', details: 'Changed stage from Proposal to Negotiation', ipAddress: '192.168.1.1' },
-  { id: '2', timestamp: '2024-12-05T14:25:00', user: { name: 'Jane Doe', email: 'jane@company.com' }, action: 'create', resource: 'Contact', resourceId: 'contact-012', details: 'Created new contact: Michael Brown', ipAddress: '192.168.1.2' },
-  { id: '3', timestamp: '2024-12-05T14:20:00', user: { name: 'Mike Johnson', email: 'mike@company.com' }, action: 'login', resource: 'Session', resourceId: 'session-123', details: 'User logged in successfully', ipAddress: '192.168.1.3' },
-  { id: '4', timestamp: '2024-12-05T14:15:00', user: { name: 'John Smith', email: 'john@company.com' }, action: 'delete', resource: 'Task', resourceId: 'task-045', details: 'Deleted completed task: Follow up call', ipAddress: '192.168.1.1' },
-  { id: '5', timestamp: '2024-12-05T14:10:00', user: { name: 'Jane Doe', email: 'jane@company.com' }, action: 'view', resource: 'Report', resourceId: 'report-001', details: 'Viewed quarterly sales report', ipAddress: '192.168.1.2' },
-  { id: '6', timestamp: '2024-12-05T14:05:00', user: { name: 'Admin User', email: 'admin@company.com' }, action: 'export', resource: 'Contacts', resourceId: 'export-001', details: 'Exported 250 contacts to CSV', ipAddress: '192.168.1.10' },
-  { id: '7', timestamp: '2024-12-05T14:00:00', user: { name: 'Mike Johnson', email: 'mike@company.com' }, action: 'update', resource: 'Company', resourceId: 'company-005', details: 'Updated company info: TechCorp Inc.', ipAddress: '192.168.1.3' },
-  { id: '8', timestamp: '2024-12-05T13:55:00', user: { name: 'John Smith', email: 'john@company.com' }, action: 'logout', resource: 'Session', resourceId: 'session-122', details: 'User logged out', ipAddress: '192.168.1.1' },
-];
+interface TextLogRow {
+  id: string;
+  action: string | null;
+  details: string | null;
+  performed_by: string | null;
+  created_at: string;
+}
 
-const getActionIcon = (action: AuditLog['action']) => {
-  switch (action) {
-    case 'create': return <Plus className="h-4 w-4 text-green-500" />;
-    case 'update': return <FileEdit className="h-4 w-4 text-primary" />;
-    case 'delete': return <Trash2 className="h-4 w-4 text-destructive" />;
-    case 'view': return <Eye className="h-4 w-4 text-muted-foreground" />;
-    case 'login': return <LogIn className="h-4 w-4 text-green-500" />;
-    case 'logout': return <LogOut className="h-4 w-4 text-orange-500" />;
-    case 'export': return <Download className="h-4 w-4 text-primary" />;
-  }
+interface SalesTeamLogRow {
+  id: string;
+  action: string;
+  details: unknown;
+  user_id: string | null;
+  created_at: string;
+}
+
+const humanize = (value: string) =>
+  value
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+/** sales_team_audit_logs.details is jsonb — turn it into a short readable line. */
+const summarizeDetails = (details: unknown): string => {
+  if (details == null) return '';
+  if (typeof details === 'string') return details;
+  if (typeof details !== 'object') return String(details);
+  return Object.entries(details as Record<string, unknown>)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${humanize(k)}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+    .join(', ');
 };
 
-const getActionBadge = (action: AuditLog['action']) => {
-  const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    create: 'default',
-    update: 'secondary',
-    delete: 'destructive',
-    view: 'outline',
-    login: 'default',
-    logout: 'secondary',
-    export: 'default',
-  };
-  return <Badge variant={variants[action]} className="capitalize">{action}</Badge>;
+const getActionIcon = (action: string) => {
+  const a = action.toLowerCase();
+  if (a.includes('creat') || a.includes('add')) return <Plus className="h-4 w-4 text-green-500" />;
+  if (a.includes('delet') || a.includes('remov') || a.includes('deactivat'))
+    return <Trash2 className="h-4 w-4 text-destructive" />;
+  if (a.includes('updat') || a.includes('change') || a.includes('edit'))
+    return <FileEdit className="h-4 w-4 text-primary" />;
+  return <Activity className="h-4 w-4 text-muted-foreground" />;
 };
+
+const getActionVariant = (action: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
+  const a = action.toLowerCase();
+  if (a.includes('creat') || a.includes('add')) return 'default';
+  if (a.includes('delet') || a.includes('remov') || a.includes('deactivat')) return 'destructive';
+  if (a.includes('updat') || a.includes('change') || a.includes('edit')) return 'secondary';
+  return 'outline';
+};
+
+const initialsOf = (name: string) =>
+  name
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase())
+    .join('') || '?';
+
+const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
 export const AuditLogs: React.FC = () => {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [resourceFilter, setResourceFilter] = useState('all');
 
-  const filteredLogs = auditLogs.filter(log => {
-    const matchesSearch = 
-      log.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.resource.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAction = actionFilter === 'all' || log.action === actionFilter;
-    const matchesResource = resourceFilter === 'all' || log.resource.toLowerCase() === resourceFilter.toLowerCase();
+  const fetchLogs = async () => {
+    setLoading(true);
+    const textCols = 'id, action, details, performed_by, created_at';
+
+    const [leadRes, quotationRes, invoiceRes, teamRes] = await Promise.all([
+      supabase.from('lead_logs').select(textCols).order('created_at', { ascending: false }).limit(LOG_LIMIT),
+      supabase.from('quotation_logs').select(textCols).order('created_at', { ascending: false }).limit(LOG_LIMIT),
+      supabase.from('invoice_logs').select(textCols).order('created_at', { ascending: false }).limit(LOG_LIMIT),
+      supabase
+        .from('sales_team_audit_logs')
+        .select('id, action, details, user_id, created_at')
+        .order('created_at', { ascending: false })
+        .limit(LOG_LIMIT),
+    ]);
+
+    const failed = [leadRes, quotationRes, invoiceRes, teamRes].filter((r) => r.error);
+    if (failed.length > 0) {
+      toast.error(`Some activity could not be loaded: ${failed[0].error?.message}`);
+    }
+
+    // sales_team_audit_logs stores a user id; resolve it to a name/email.
+    const teamRows = (teamRes.data ?? []) as SalesTeamLogRow[];
+    const userNames = new Map<string, string>();
+    if (teamRows.some((r) => r.user_id)) {
+      const { data: users } = await supabase.rpc('get_users');
+      for (const u of (users ?? []) as { id: string; email: string | null; full_name: string | null }[]) {
+        userNames.set(u.id, u.full_name?.trim() || u.email || 'Unknown user');
+      }
+    }
+
+    const fromText = (rows: TextLogRow[] | null, resource: Resource): AuditLog[] =>
+      (rows ?? []).map((r) => ({
+        id: `${resource}-${r.id}`,
+        timestamp: r.created_at,
+        user: r.performed_by?.trim() || 'Unknown user',
+        action: r.action?.trim() || 'activity',
+        resource,
+        details: r.details ?? '',
+      }));
+
+    const merged: AuditLog[] = [
+      ...fromText(leadRes.data as TextLogRow[] | null, 'Lead'),
+      ...fromText(quotationRes.data as TextLogRow[] | null, 'Quotation'),
+      ...fromText(invoiceRes.data as TextLogRow[] | null, 'Invoice'),
+      ...teamRows.map((r) => ({
+        id: `team-${r.id}`,
+        timestamp: r.created_at,
+        user: (r.user_id && userNames.get(r.user_id)) || 'Unknown user',
+        action: r.action || 'activity',
+        resource: 'Sales Team' as Resource,
+        details: summarizeDetails(r.details),
+      })),
+    ]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, LOG_LIMIT);
+
+    setLogs(merged);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const actionOptions = useMemo(
+    () => Array.from(new Set(logs.map((l) => l.action.toLowerCase()))).sort(),
+    [logs]
+  );
+
+  const filteredLogs = logs.filter((log) => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      !term ||
+      log.user.toLowerCase().includes(term) ||
+      log.details.toLowerCase().includes(term) ||
+      log.action.toLowerCase().includes(term) ||
+      log.resource.toLowerCase().includes(term);
+    const matchesAction = actionFilter === 'all' || log.action.toLowerCase() === actionFilter;
+    const matchesResource = resourceFilter === 'all' || log.resource === resourceFilter;
     return matchesSearch && matchesAction && matchesResource;
   });
+
+  const handleExport = () => {
+    if (filteredLogs.length === 0) {
+      toast.info('No log entries to export');
+      return;
+    }
+    const header = ['Timestamp', 'User', 'Action', 'Resource', 'Details'].join(',');
+    const rows = filteredLogs.map((l) =>
+      [new Date(l.timestamp).toISOString(), l.user, l.action, l.resource, l.details]
+        .map(csvEscape)
+        .join(',')
+    );
+    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${filteredLogs.length} log entries`);
+  };
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            Audit Logs
-          </CardTitle>
-          <Button variant="outline" className="gap-2">
-            <Download className="h-4 w-4" />
-            Export Logs
-          </Button>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Audit Logs
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Latest {LOG_LIMIT} activity entries from leads, quotations, invoices and sales teams.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2" onClick={fetchLogs} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handleExport}
+              disabled={loading || filteredLogs.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export Logs
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -121,32 +260,29 @@ export const AuditLogs: React.FC = () => {
             />
           </div>
           <Select value={actionFilter} onValueChange={setActionFilter}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[170px]">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Action" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Actions</SelectItem>
-              <SelectItem value="create">Create</SelectItem>
-              <SelectItem value="update">Update</SelectItem>
-              <SelectItem value="delete">Delete</SelectItem>
-              <SelectItem value="view">View</SelectItem>
-              <SelectItem value="login">Login</SelectItem>
-              <SelectItem value="logout">Logout</SelectItem>
-              <SelectItem value="export">Export</SelectItem>
+              {actionOptions.map((a) => (
+                <SelectItem key={a} value={a}>
+                  {humanize(a)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={resourceFilter} onValueChange={setResourceFilter}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[170px]">
               <SelectValue placeholder="Resource" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Resources</SelectItem>
-              <SelectItem value="contact">Contact</SelectItem>
-              <SelectItem value="Leads">Leads</SelectItem>
-              <SelectItem value="company">Company</SelectItem>
-              <SelectItem value="task">Task</SelectItem>
-              <SelectItem value="session">Session</SelectItem>
+              <SelectItem value="Lead">Lead</SelectItem>
+              <SelectItem value="Quotation">Quotation</SelectItem>
+              <SelectItem value="Invoice">Invoice</SelectItem>
+              <SelectItem value="Sales Team">Sales Team</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -160,43 +296,54 @@ export const AuditLogs: React.FC = () => {
                 <TableHead>Action</TableHead>
                 <TableHead>Resource</TableHead>
                 <TableHead>Details</TableHead>
-                <TableHead>IP Address</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLogs.map(log => (
-                <TableRow key={log.id}>
-                  <TableCell className="whitespace-nowrap">
-                    {new Date(log.timestamp).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                          {log.user.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium">{log.user.name}</p>
-                        <p className="text-xs text-muted-foreground">{log.user.email}</p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {getActionIcon(log.action)}
-                      {getActionBadge(log.action)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{log.resource}</Badge>
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">{log.details}</TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-sm">
-                    {log.ipAddress}
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    Loading activity...
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : filteredLogs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    {logs.length === 0
+                      ? 'No activity recorded yet.'
+                      : 'No log entries match your filters.'}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredLogs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {new Date(log.timestamp).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                            {initialsOf(log.user)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <p className="text-sm font-medium">{log.user}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getActionIcon(log.action)}
+                        <Badge variant={getActionVariant(log.action)}>{humanize(log.action)}</Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{log.resource}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate" title={log.details}>
+                      {log.details || '—'}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </div>

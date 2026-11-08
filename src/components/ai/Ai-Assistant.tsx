@@ -100,12 +100,13 @@ const getQuickPrompts = (pageType: string): Array<{ label: string; prompt: strin
 
 export default function AIAssistant({ currentPath }: Props) {
     const { aiEnabled } = useLayout();
-    // do not render the assistant when user is viewing settings pages
-    if (!aiEnabled) return null;
-    if (currentPath.toLowerCase().startsWith('/settings')) {
-        return null;
-    }
+    // Hide the assistant when AI is turned off or on settings pages.
+    // This check lives in a wrapper so the panel's hooks always run in the same order.
+    if (!aiEnabled || currentPath.toLowerCase().startsWith('/settings')) return null;
+    return <AIAssistantPanel currentPath={currentPath} />;
+}
 
+function AIAssistantPanel({ currentPath }: Props) {
     const [input, setInput] = useState("");
     // conversation always starts fresh on load (only last query is stored separately)
     const [messages, setMessages] = useState<Message[]>([
@@ -619,7 +620,7 @@ I’m your AI assistant and I’m here to assist you with anything you need rela
                             console.warn("AI assistant: failed to save toggle position", e);
                         }
                     }}
-                    className="fixed bottom-6 right-6 z-55 cursor-grab active:cursor-grabbing"
+                    className="fixed bottom-24 right-6 z-55 cursor-grab active:cursor-grabbing"
                     whileDrag={{ scale: 1.1 }}
                 >
                     <Button

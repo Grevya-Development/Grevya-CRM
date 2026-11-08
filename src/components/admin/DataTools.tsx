@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -12,127 +12,135 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Upload,
-  Download,
-  FileSpreadsheet,
-  FileJson,
-  File,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  RefreshCw,
-} from 'lucide-react';
+import { Upload, Download, FileSpreadsheet, FileJson, File, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { contacts, Leads, companies, tasks } from '@/data/sampleData';
+import { supabase } from '@/supabase/supabaseClient';
 
-interface ImportPreview {
-  headers: string[];
-  rows: string[][];
-  mapping: Record<string, string>;
-}
+type ExportType = 'customers' | 'contacts' | 'leads' | 'tasks';
+type ExportFormat = 'csv' | 'json' | 'xlsx';
+
+/** Real Supabase tables behind each export option. */
+const EXPORT_SOURCES: Record<ExportType, { label: string; table: string; activeOnly?: boolean }> = {
+  customers: { label: 'Customers', table: 'crm_customers' },
+  contacts: { label: 'Contacts', table: 'crm_contacts' },
+  // Same filter the Leads page uses: hide soft-deleted leads.
+  leads: { label: 'Leads', table: 'crm_leads', activeOnly: true },
+  tasks: { label: 'Tasks', table: 'crm_tasks' },
+};
+
+const PAGE_SIZE = 1000;
+
+const buildQuery = (type: ExportType, head = false) => {
+  const { table, activeOnly } = EXPORT_SOURCES[type];
+  let query = supabase
+    .from(table)
+    .select('*', head ? { count: 'exact', head: true } : undefined);
+  if (activeOnly) query = query.or('is_deleted.eq.false,is_deleted.is.null');
+  return query;
+};
+
+/** Fetch every row of the table, paging past PostgREST's per-request row cap. */
+const fetchAllRows = async (type: ExportType): Promise<Record<string, unknown>[]> => {
+  const rows: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await buildQuery(type)
+      .order('created_at', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...((data ?? []) as Record<string, unknown>[]));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return rows;
+};
+
+const cellToString = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
+const toCsv = (rows: Record<string, unknown>[]): string => {
+  const headers = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
+  const escape = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const lines = rows.map((r) => headers.map((h) => escape(cellToString(r[h]))).join(','));
+  return [headers.map(escape).join(','), ...lines].join('\n');
+};
+
+const downloadFile = (content: BlobPart, filename: string, type: string) => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 export const DataTools: React.FC = () => {
-  const [importType, setImportType] = useState('contacts');
-  const [exportType, setExportType] = useState('contacts');
-  const [exportFormat, setExportFormat] = useState('csv');
-  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
-  const [importProgress, setImportProgress] = useState(0);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  const [exportType, setExportType] = useState<ExportType>('contacts');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
+  const [counts, setCounts] = useState<Partial<Record<ExportType, number>>>({});
+  const [loadingCounts, setLoadingCounts] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Simulate file parsing
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n');
-      const headers = lines[0].split(',').map(h => h.trim());
-      const rows = lines.slice(1, 6).map(line => line.split(',').map(c => c.trim()));
-      
-      setImportPreview({
-        headers,
-        rows,
-        mapping: headers.reduce((acc, h) => ({ ...acc, [h]: h.toLowerCase() }), {}),
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const types = Object.keys(EXPORT_SOURCES) as ExportType[];
+      const results = await Promise.all(types.map((t) => buildQuery(t, true)));
+      if (cancelled) return;
+      const next: Partial<Record<ExportType, number>> = {};
+      results.forEach((res, i) => {
+        if (!res.error && typeof res.count === 'number') next[types[i]] = res.count;
       });
+      setCounts(next);
+      setLoadingCounts(false);
+    })();
+    return () => {
+      cancelled = true;
     };
-    reader.readAsText(file);
-  };
+  }, []);
 
-  const handleImport = () => {
-    setIsImporting(true);
-    setImportProgress(0);
+  const handleExport = async () => {
+    const { label } = EXPORT_SOURCES[exportType];
+    setIsExporting(true);
+    try {
+      const rows = await fetchAllRows(exportType);
+      if (rows.length === 0) {
+        toast.info(`There are no ${label.toLowerCase()} to export`);
+        return;
+      }
 
-    // Simulate import progress
-    const interval = setInterval(() => {
-      setImportProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsImporting(false);
-          toast.success('Import completed successfully!');
-          setImportPreview(null);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 200);
-  };
-
-  const handleExport = () => {
-    let data: any[] = [];
-    switch (exportType) {
-      case 'contacts': data = contacts; break;
-      case 'Leads': data = Leads; break;
-      case 'companies': data = companies; break;
-      case 'tasks': data = tasks; break;
-    }
-
-    if (exportFormat === 'csv') {
-      const headers = Object.keys(data[0]).join(',');
-      const rows = data.map(item => Object.values(item).join(','));
-      const csv = [headers, ...rows].join('\n');
-      downloadFile(csv, `${exportType}_export.csv`, 'text/csv');
-    } else if (exportFormat === 'json') {
-      const json = JSON.stringify(data, null, 2);
-      downloadFile(json, `${exportType}_export.json`, 'application/json');
-    } else {
-      // Excel format would require a library like xlsx
-      toast.info('Excel export would require xlsx library');
+      const base = `${exportType}_export_${new Date().toISOString().slice(0, 10)}`;
+      if (exportFormat === 'csv') {
+        downloadFile(toCsv(rows), `${base}.csv`, 'text/csv');
+      } else if (exportFormat === 'json') {
+        downloadFile(JSON.stringify(rows, null, 2), `${base}.json`, 'application/json');
+      } else {
+        const sheetRows = rows.map((r) =>
+          Object.fromEntries(Object.entries(r).map(([k, v]) => [k, cellToString(v)]))
+        );
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sheetRows), label);
+        XLSX.writeFile(workbook, `${base}.xlsx`);
+      }
+      toast.success(`Exported ${rows.length} ${label.toLowerCase()}`);
+    } catch (err: any) {
+      toast.error(`Export failed: ${err?.message || 'unknown error'}`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
-  const downloadFile = (content: string, filename: string, type: string) => {
-    const blob = new Blob([content], { type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`${filename} downloaded successfully`);
-  };
-
-  const exportStats = {
-    contacts: contacts.length,
-    Leads: Leads.length,
-    companies: companies.length,
-    tasks: tasks.length,
+  const countLabel = (type: ExportType) => {
+    if (loadingCounts) return '…';
+    return counts[type] ?? '—';
   };
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      {/* Import Section */}
+      {/* Import Section — the real importer lives on the Contacts page */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -141,92 +149,14 @@ export const DataTools: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Import Type</Label>
-            <Select value={importType} onValueChange={setImportType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contacts">Contacts</SelectItem>
-                <SelectItem value="Leads">Leads</SelectItem>
-                <SelectItem value="companies">Companies</SelectItem>
-                <SelectItem value="tasks">Tasks</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="border-2 border-dashed rounded-lg p-8 text-center">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.xlsx,.json"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground mb-2">
-              Drag and drop your file here, or
-            </p>
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-              Browse Files
-            </Button>
-            <p className="text-xs text-muted-foreground mt-2">
-              Supported formats: CSV, XLSX, JSON
-            </p>
-          </div>
-
-          {importPreview && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Preview</h4>
-                <Badge variant="secondary">
-                  {importPreview.rows.length} rows shown
-                </Badge>
-              </div>
-
-              <div className="overflow-x-auto border rounded-lg">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {importPreview.headers.map((h, i) => (
-                        <TableHead key={i} className="whitespace-nowrap">{h}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {importPreview.rows.map((row, i) => (
-                      <TableRow key={i}>
-                        {row.map((cell, j) => (
-                          <TableCell key={j} className="whitespace-nowrap">{cell}</TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {isImporting ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Importing...</span>
-                    <span>{importProgress}%</span>
-                  </div>
-                  <Progress value={importProgress} />
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <Button onClick={handleImport} className="flex-1">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Start Import
-                  </Button>
-                  <Button variant="outline" onClick={() => setImportPreview(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
+          <p className="text-sm text-muted-foreground">
+            Contacts can be imported from a CSV or Excel file using the <strong>Import</strong>{' '}
+            button on the Contacts page. Bulk import for other record types is not available yet.
+          </p>
+          <Button variant="outline" onClick={() => navigate('/contacts')}>
+            <Upload className="h-4 w-4 mr-2" />
+            Go to Contacts
+          </Button>
         </CardContent>
       </Card>
 
@@ -242,21 +172,22 @@ export const DataTools: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Data Type</Label>
-              <Select value={exportType} onValueChange={setExportType}>
+              <Select value={exportType} onValueChange={(v) => setExportType(v as ExportType)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="contacts">Contacts ({exportStats.contacts})</SelectItem>
-                  <SelectItem value="Leads">Leads ({exportStats.Leads})</SelectItem>
-                  <SelectItem value="companies">Companies ({exportStats.companies})</SelectItem>
-                  <SelectItem value="tasks">Tasks ({exportStats.tasks})</SelectItem>
+                  {(Object.keys(EXPORT_SOURCES) as ExportType[]).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {EXPORT_SOURCES[t].label} ({countLabel(t)})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Format</Label>
-              <Select value={exportFormat} onValueChange={setExportFormat}>
+              <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as ExportFormat)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -289,7 +220,7 @@ export const DataTools: React.FC = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span>Records to export</span>
-                <Badge variant="secondary">{exportStats[exportType as keyof typeof exportStats]}</Badge>
+                <Badge variant="secondary">{countLabel(exportType)}</Badge>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span>Format</span>
@@ -298,36 +229,14 @@ export const DataTools: React.FC = () => {
             </div>
           </div>
 
-          <Button onClick={handleExport} className="w-full">
-            <Download className="h-4 w-4 mr-2" />
-            Export {exportType.charAt(0).toUpperCase() + exportType.slice(1)}
+          <Button onClick={handleExport} className="w-full" disabled={isExporting}>
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            {isExporting ? 'Exporting...' : `Export ${EXPORT_SOURCES[exportType].label}`}
           </Button>
-
-          <div className="border-t pt-4">
-            <h4 className="font-medium mb-3">Recent Exports</h4>
-            <div className="space-y-2">
-              {[
-                { name: 'contacts_export.csv', date: '2024-12-05', records: 250, status: 'success' },
-                { name: 'Leads_export.json', date: '2024-12-04', records: 85, status: 'success' },
-                { name: 'companies_export.xlsx', date: '2024-12-03', records: 45, status: 'failed' },
-              ].map((exp, i) => (
-                <div key={i} className="flex items-center justify-between p-2 rounded-lg border">
-                  <div className="flex items-center gap-2">
-                    {exp.status === 'success' ? (
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-destructive" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium">{exp.name}</p>
-                      <p className="text-xs text-muted-foreground">{exp.records} records</p>
-                    </div>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{exp.date}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

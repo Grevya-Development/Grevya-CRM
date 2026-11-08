@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, X, SlidersHorizontal, Plus, Minus } from 'lu
 import { PersistentToolbar } from '@/components/shared/PersistentToolbar';
 import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
+import { LEAD_STAGES_CONFIG } from '@/lib/lead-constants';
 import {
   Table,
   TableBody,
@@ -17,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
+const STAGES = LEAD_STAGES_CONFIG.map(stage => stage.name);
 
 export default function LeadsPivot() {
   const navigate = useNavigate();
@@ -29,8 +32,9 @@ export default function LeadsPivot() {
   const fetchLeads = async () => {
     try {
       const { data, error } = await supabase
-        .from('leads')
+        .from('crm_leads')
         .select('*')
+        .or('is_deleted.eq.false,is_deleted.is.null')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -56,12 +60,7 @@ export default function LeadsPivot() {
       if (date) {
         const monthKey = format(date, 'MMM yyyy');
         if (!grouped[monthKey]) {
-          grouped[monthKey] = {
-            'Qualification': [],
-            'Need Analysis': [],
-            'Value Proposition': [],
-            'Won': []
-          };
+          grouped[monthKey] = Object.fromEntries(STAGES.map(stage => [stage, [] as Lead[]]));
         }
         const stage = lead.lead_stage || 'Qualification';
         if (grouped[monthKey][stage]) {
@@ -134,39 +133,22 @@ export default function LeadsPivot() {
               {/* First Header Row - Stage Names */}
               <TableRow className="bg-muted/30 hover:bg-muted/30 border-b-0">
                 <TableHead className="w-[200px] border-r"></TableHead>
-                <TableHead className="text-center border-r">
-                  <div className="flex items-center justify-center gap-1">
-                    <Plus className="h-3 w-3" />
-                    <span>New</span>
-                  </div>
-                </TableHead>
-                <TableHead className="text-center border-r">
-                  <div className="flex items-center justify-center gap-1">
-                    <Plus className="h-3 w-3" />
-                    <span>Qualified</span>
-                  </div>
-                </TableHead>
-                <TableHead className="text-center border-r">
-                  <div className="flex items-center justify-center gap-1">
-                    <Plus className="h-3 w-3" />
-                    <span>Proposition</span>
-                  </div>
-                </TableHead>
-                <TableHead className="text-center border-r">
-                  <div className="flex items-center justify-center gap-1">
-                    <Plus className="h-3 w-3" />
-                    <span>Won</span>
-                  </div>
-                </TableHead>
+                {STAGES.map(stage => (
+                  <TableHead key={stage} className="text-center border-r">
+                    <div className="flex items-center justify-center gap-1">
+                      <Plus className="h-3 w-3" />
+                      <span>{stage}</span>
+                    </div>
+                  </TableHead>
+                ))}
                 <TableHead className="text-center"></TableHead>
               </TableRow>
               {/* Second Header Row - Expected Revenue Labels */}
               <TableRow className="bg-muted/30 hover:bg-muted/30">
                 <TableHead className="w-[200px] border-r text-muted-foreground">Expected Revenue</TableHead>
-                <TableHead className="text-center border-r text-muted-foreground">Expected Revenue</TableHead>
-                <TableHead className="text-center border-r text-muted-foreground">Expected Revenue</TableHead>
-                <TableHead className="text-center border-r text-muted-foreground">Expected Revenue</TableHead>
-                <TableHead className="text-center border-r text-muted-foreground">Expected Revenue</TableHead>
+                {STAGES.map(stage => (
+                  <TableHead key={stage} className="text-center border-r text-muted-foreground">Expected Revenue</TableHead>
+                ))}
                 <TableHead className="text-center text-muted-foreground">Expected Revenue</TableHead>
               </TableRow>
             </TableHeader>
@@ -179,18 +161,11 @@ export default function LeadsPivot() {
                     <span>Total</span>
                   </div>
                 </TableCell>
-                <TableCell className="text-center font-semibold tabular-nums border-r">
-                  {getTotalByStage('new').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </TableCell>
-                <TableCell className="text-center font-semibold tabular-nums border-r">
-                  {getTotalByStage('qualified').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </TableCell>
-                <TableCell className="text-center font-semibold tabular-nums border-r">
-                  {getTotalByStage('proposition').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </TableCell>
-                <TableCell className="text-center font-semibold tabular-nums border-r">
-                  {getTotalByStage('won').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </TableCell>
+                {STAGES.map(stage => (
+                  <TableCell key={stage} className="text-center font-semibold tabular-nums border-r">
+                    {getTotalByStage(stage).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </TableCell>
+                ))}
                 <TableCell className="text-center font-semibold tabular-nums">
                   {grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </TableCell>
@@ -215,18 +190,11 @@ export default function LeadsPivot() {
                         <span>{month}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-center tabular-nums border-r">
-                      {monthData.Qualification.reduce((sum, l) => sum + Number(l.estimated_deal_value || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </TableCell>
-                    <TableCell className="text-center tabular-nums border-r">
-                      {monthData['Need Analysis'].reduce((sum, l) => sum + Number(l.estimated_deal_value || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </TableCell>
-                    <TableCell className="text-center tabular-nums border-r">
-                      {monthData['Value Proposition'].reduce((sum, l) => sum + Number(l.estimated_deal_value || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </TableCell>
-                    <TableCell className="text-center tabular-nums border-r">
-                      {monthData.Won.reduce((sum, l) => sum + Number(l.estimated_deal_value || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </TableCell>
+                    {STAGES.map(stage => (
+                      <TableCell key={stage} className="text-center tabular-nums border-r">
+                        {monthData[stage].reduce((sum, l) => sum + Number(l.estimated_deal_value || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                    ))}
                     <TableCell className="text-center font-semibold tabular-nums">
                       {getMonthTotal(month).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>

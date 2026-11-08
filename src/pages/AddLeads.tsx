@@ -126,7 +126,6 @@ const AddLeads = () => {
     const initialValues = location.state?.initialValues;
     const isEditMode = Boolean(id);
     const [loading, setLoading] = useState(false);
-    const [contacts, setContacts] = useState<any[]>([]);
     const [companyList, setCompanyList] = useState<any[]>([]);
     const [addressList, setAddressList] = useState<{ label: string; value: string }[]>([]);
     const [ownerList, setOwnerList] = useState<{ label: string; value: string }[]>([]);
@@ -180,10 +179,6 @@ const AddLeads = () => {
 
     useEffect(() => {
         const loadData = async () => {
-            const { data: customers } = await supabase
-                .from('customers')
-                .select('id, first_name, last_name, email, phone');
-
             const { data: crm_customers, error: companyError } = await supabase
                 .from('crm_customers')
                 .select('id, name')
@@ -212,7 +207,6 @@ const AddLeads = () => {
                 }
             }
 
-            setContacts(customers || []);
             setAddressList([]);
 
             const uniqueCompanies = Array.from(new Set((crm_customers || []).map(c => c.name)))

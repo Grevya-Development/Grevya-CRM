@@ -19,8 +19,9 @@ export default function LeadsActivity() {
   const fetchLeads = async () => {
     try {
       const { data, error } = await supabase
-        .from('leads')
+        .from('crm_leads')
         .select('*')
+        .or('is_deleted.eq.false,is_deleted.is.null')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -38,8 +39,8 @@ export default function LeadsActivity() {
 
   // Activity types with counts
   const activityTypes = [
-    { name: 'Email', count: 2, color: 'bg-red-500' },
-    { name: 'Call', count: 6, color1: 'bg-yellow-500', color2: 'bg-red-500', color3: 'bg-green-500' },
+    { name: 'Email', count: 0, color: 'bg-red-500' },
+    { name: 'Call', count: 0, color1: 'bg-yellow-500', color2: 'bg-red-500', color3: 'bg-green-500' },
     { name: 'Meeting', count: 0, color: 'bg-blue-500' },
     { name: 'Follow-up Quote', count: 0, color: 'bg-purple-500' },
     { name: 'Make Quote', count: 0, color: 'bg-pink-500' },
@@ -53,7 +54,7 @@ export default function LeadsActivity() {
     switch (stage) {
       case 'Qualification':
         return 'bg-amber-500';
-      case 'Need Analysis':
+      case 'Needs Analysis':
         return 'bg-gray-200 text-gray-800';
       case 'Value Proposition':
         return 'bg-red-500';

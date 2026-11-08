@@ -6,7 +6,7 @@ import { TargetVsAchieveChart } from '@/components/dashboard/TargetVsAchieveChar
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { TasksList } from '@/components/dashboard/TasksList';
 import { DrillDownModal } from '@/components/drilldown/DrillDownModal';
-import { revenueDrillDown, LeadsDrillDown, leadsDrillDown, conversionDrillDown } from '@/data/drillDownData';
+import { buildDrillDowns, revenueChange, statCharts } from '@/lib/dashboardStats';
 import { useCurrency } from '@/hooks/useCurrency';
 import {
   Briefcase,
@@ -85,6 +85,10 @@ export default function Dashboard() {
     return { totalRevenue, openDeals, newLeads, conversionRate };
   }, [leads]);
 
+  const charts = useMemo(() => statCharts(leads), [leads]);
+  const revenueTrend = useMemo(() => revenueChange(leads), [leads]);
+  const drillDowns = useMemo(() => buildDrillDowns(leads), [leads]);
+
 
   useEffect(() => {
     const getUser = async () => {
@@ -123,7 +127,7 @@ export default function Dashboard() {
     const fetchLeads = async () => {
       setLoading(true);
 
-      let query = supabase.from("crm_leads").select("*");
+      let query = supabase.from("crm_leads").select("*, crm_customers(name)");
 
       if (userRole !== "Admin" && userRole !== "Super Admin") {
         query = query.or(
@@ -180,16 +184,16 @@ export default function Dashboard() {
   const handleStatClick = (type: string) => {
     switch (type) {
       case 'revenue':
-        setDrillDownData(revenueDrillDown);
+        setDrillDownData(drillDowns.revenue);
         break;
       case 'Leads':
-        setDrillDownData(LeadsDrillDown);
+        setDrillDownData(drillDowns.openDeals);
         break;
       case 'leads':
-        setDrillDownData(leadsDrillDown);
+        setDrillDownData(drillDowns.newLeads);
         break;
       case 'conversion':
-        setDrillDownData(conversionDrillDown);
+        setDrillDownData(drillDowns.conversion);
         break;
     }
     setDrillDownOpen(true);
@@ -217,11 +221,11 @@ export default function Dashboard() {
             <StatCard
               title="Total Revenue"
               value={formatCurrency(realStats.totalRevenue)}
-              change="+28% from last month"
-              changeType="positive"
+              change={revenueTrend.text}
+              changeType={revenueTrend.positive ? "positive" : "negative"}
               icon={getCurrencyIcon()}
               iconColor="bg-success/10 text-success"
-              chartData={[40, 48, 52, 56, 62, 68, 74, 80]}
+              chartData={charts.revenue}
               averageValue={formatCurrency(realStats.totalRevenue / 12)}
               barColor="bg-[#15803D]"
             />
@@ -235,7 +239,7 @@ export default function Dashboard() {
               changeType="positive"
               icon={Briefcase}
               iconColor="bg-orange-500/10 text-orange-500"
-              chartData={[38, 42, 46, 50, 54, 58, 64, 70]}
+              chartData={charts.openDeals}
               averageValue={realStats.openDeals > 0
                 ? formatCurrency(leads
                   .filter(l => !['Won', 'Lost'].includes(l.lead_stage))
@@ -254,7 +258,7 @@ export default function Dashboard() {
               changeType="positive"
               icon={Users}
               iconColor="bg-info/10 text-info"
-              chartData={[45, 50, 55, 62, 68, 75, 82, 88]}
+              chartData={charts.newLeads}
               averageValue={`${leads.length} total`}
               barColor="bg-primary"
             />
@@ -268,7 +272,7 @@ export default function Dashboard() {
               changeType="positive"
               icon={TrendingUp}
               iconColor="bg-warning/10 text-warning"
-              chartData={[50, 54, 60, 65, 70, 76, 82, 88]}
+              chartData={charts.won}
               averageValue={`${leads.filter(l => l.lead_stage === 'Won').length} won`}
               barColor="bg-[#0F766E]"
             />

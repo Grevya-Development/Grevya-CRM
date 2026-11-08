@@ -33,7 +33,8 @@ export default function CreateMeeting() {
                             </DialogTitle>
                         </DialogHeader>
                         <CreateMeetingForm
-                            customerId={id || ""}
+                            entityId={id || ""}
+                            entityType="customer"
                             onSuccess={() => navigate(`/meeting-schedule/${id}`)}
                             onCancel={() => navigate(-1)}
                         />

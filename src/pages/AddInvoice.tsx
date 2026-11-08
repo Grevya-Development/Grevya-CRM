@@ -39,7 +39,8 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { supabase } from '../supabase/supabaseClient';
-import { Contact, Product, Invoice, InvoiceItem } from '@/types';
+import { getCurrentUserName } from '@/lib/currentUser';
+import { Product, Invoice, InvoiceItem } from '@/types';
 import { useCurrency } from '@/hooks/useCurrency';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -50,6 +51,12 @@ dayjs.extend(relativeTime);
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+
+// Rows from `crm_customers`, used by the Customer picker. invoices.contact_id stores crm_customers.id.
+interface CustomerOption {
+    id: string;
+    name: string | null;
+}
 
 interface InvoiceLog {
     id: string;
@@ -68,7 +75,7 @@ const AddInvoice = () => {
     const [loading, setLoading] = useState(false);
     const [invoice, setInvoice] = useState<Invoice | null>(null);
     const [items, setItems] = useState<any[]>([]);
-    const [contacts, setContacts] = useState<Contact[]>([]);
+    const [contacts, setContacts] = useState<CustomerOption[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [status, setStatus] = useState<'draft' | 'posted' | 'cancelled' | 'paid'>('draft');
     const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
@@ -98,7 +105,7 @@ const AddInvoice = () => {
     }, [id]);
 
     const fetchContacts = async () => {
-        const { data } = await supabase.from('contacts').select('*').order('name');
+        const { data } = await supabase.from('crm_customers').select('id, name').order('name');
         if (data) setContacts(data);
     };
 
@@ -163,7 +170,8 @@ const AddInvoice = () => {
                 table: 'invoice_logs',
                 filter: `invoice_id=eq.${id}`
             }, (payload: any) => {
-                setLogs(prev => [payload.new as InvoiceLog, ...prev]);
+                // Skip entries already shown (a refetch may have loaded them first).
+                setLogs(prev => prev.some(l => l.id === payload.new.id) ? prev : [payload.new as InvoiceLog, ...prev]);
             })
             .subscribe();
 
@@ -178,7 +186,7 @@ const AddInvoice = () => {
             invoice_id: id,
             action,
             details,
-            performed_by: 'Mitchell Admin'
+            performed_by: await getCurrentUserName()
         });
     };
 

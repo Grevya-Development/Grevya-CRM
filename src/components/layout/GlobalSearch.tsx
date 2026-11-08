@@ -78,14 +78,14 @@ export function GlobalSearch({ className }: { className?: string }) {
 
             const [contactsRes, customersRes, productsRes] = await Promise.all([
                 supabase
-                    .from('contacts')
-                    .select('id, name, email, company')
-                    .or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,company.ilike.%${searchQuery}%`)
+                    .from('crm_contacts')
+                    .select('id, name, email, mobile_no, designation, customer_id, customer:crm_customers(name)')
+                    .or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,mobile_no.ilike.%${searchQuery}%,designation.ilike.%${searchQuery}%`)
                     .limit(5),
                 supabase
-                    .from('customers')
-                    .select('id, first_name, last_name, email, account:companies(name)')
-                    .or(`first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`)
+                    .from('crm_customers')
+                    .select('id, name, industry, website_link')
+                    .or(`name.ilike.%${searchQuery}%,industry.ilike.%${searchQuery}%,website_link.ilike.%${searchQuery}%`)
                     .limit(5),
                 supabase
                     .from('products')
@@ -96,12 +96,14 @@ export function GlobalSearch({ className }: { className?: string }) {
 
             if (contactsRes.data) {
                 contactsRes.data.forEach((c: any) => {
+                    const companyName = c.customer?.name;
+                    const detail = c.email || c.mobile_no || c.designation || '';
                     searchResults.push({
                         id: c.id,
-                        title: c.name,
-                        subtitle: c.company ? `${c.email} • ${c.company}` : c.email,
+                        title: c.name || companyName || detail,
+                        subtitle: companyName ? (detail ? `${detail} • ${companyName}` : companyName) : detail,
                         category: 'Contact',
-                        path: '/contacts'
+                        path: `/contacts/view/${c.id}`
                     });
                 });
             }
@@ -110,10 +112,10 @@ export function GlobalSearch({ className }: { className?: string }) {
                 customersRes.data.forEach((c: any) => {
                     searchResults.push({
                         id: c.id,
-                        title: `${c.first_name} ${c.last_name}`,
-                        subtitle: c.account ? `${c.email} • ${c.account.name}` : c.email,
-                        category: 'Contact',
-                        path: `/contacts`
+                        title: c.name,
+                        subtitle: [c.industry, c.website_link].filter(Boolean).join(' • '),
+                        category: 'Company',
+                        path: `/contacts/view/${c.id}`
                     });
                 });
             }

@@ -718,6 +718,7 @@ export default function Contacts() {
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="outline"
+                        aria-label="Export Contacts"
                         className="h-10 w-10 p-0 border-slate-200 hover:border-blue-600 hover:text-blue-600 transition-colors"
                       >
                         <Upload className="h-4 w-4" />

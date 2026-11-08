@@ -25,11 +25,17 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/supabase/supabaseClient';
 import { emailService, EmailRecord } from '@/services/emailService';
-import { Contact } from '@/types';
+type HubContact = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+};
 
 export const CommunicationHub: React.FC = () => {
   const [selectedContact, setSelectedContact] = useState('');
-  const [realContacts, setRealContacts] = useState<Contact[]>([]);
+  const [realContacts, setRealContacts] = useState<HubContact[]>([]);
   const [emailData, setEmailData] = useState({ subject: '', body: '' });
   const [smsData, setSmsData] = useState({ message: '' });
   const [whatsappData, setWhatsappData] = useState({ message: '' });
@@ -44,8 +50,19 @@ export const CommunicationHub: React.FC = () => {
   useEffect(() => {
     async function fetchData() {
       try {
-        const { data: contactsData } = await supabase.from('contacts').select('*');
-        setRealContacts(contactsData || []);
+        const { data: contactsData } = await supabase
+          .from('crm_contacts')
+          .select('id, name, email, mobile_no, customer:crm_customers(name)')
+          .is('deleted_at', null);
+        setRealContacts(
+          (contactsData || []).map((c: any) => ({
+            id: c.id,
+            name: c.name || '',
+            email: c.email || '',
+            phone: c.mobile_no ?? null,
+            company: c.customer?.name ?? null,
+          }))
+        );
 
         const history = await emailService.getEmailHistory();
         setMessages(history);

@@ -139,3 +139,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 *.exe
 public/dbeaver-ce-*.exe
+.gstack/
+
+# Local Claude/Supabase MCP config (contains the Supabase project ref)
+.mcp.json

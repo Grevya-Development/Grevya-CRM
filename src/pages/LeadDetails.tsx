@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { supabase } from '../supabase/supabaseClient';
+import { getCurrentUserName } from '@/lib/currentUser';
 import { Lead } from '@/types';
 import { useCurrency } from '@/hooks/useCurrency';
 import { Worklog } from '@/components/Leads/Worklog';
@@ -225,7 +226,7 @@ const LeadDetails = () => {
             lead_id: id,
             action,
             details,
-            performed_by: 'Mitchell Admin'
+            performed_by: await getCurrentUserName()
         });
 
     };

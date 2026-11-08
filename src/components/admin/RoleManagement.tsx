@@ -43,7 +43,6 @@ import {
   Settings,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { log } from 'console';
 import { usePermission } from '@/contexts/PermissionContext';
 
 interface Role {

@@ -10,6 +10,7 @@ import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { PersistentToolbar } from '@/components/shared/PersistentToolbar';
 import { Separator } from '@/components/ui/separator';
+import { parseISO, isSameDay } from 'date-fns';
 import {
   Select,
   SelectContent,
@@ -20,7 +21,7 @@ import {
 
 export default function LeadsCalendar() {
   const navigate = useNavigate();
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 11, 1)); // December 2025
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('Month');
@@ -45,8 +46,9 @@ export default function LeadsCalendar() {
   const fetchLeads = async () => {
     try {
       const { data, error } = await supabase
-        .from('leads')
+        .from('crm_leads')
         .select('*')
+        .or('is_deleted.eq.false,is_deleted.is.null')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -90,32 +92,25 @@ export default function LeadsCalendar() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
   };
 
+  // Leads are placed on their expected close date, falling back to the creation date
   const getLeadsForDay = (day: number) => {
     const targetDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
     return leads.filter(lead => {
-      const leadDate = new Date(lead.created_at);
-      return leadDate.toDateString() === targetDate.toDateString();
+      const dateValue = lead.expected_close_date || lead.created_at;
+      return dateValue ? isSameDay(parseISO(dateValue), targetDate) : false;
     });
   };
 
-  // Mock calendar events for December 2025
-  const calendarEvents = [
-    { day: 24, title: '5 VP Chairs', color: 'bg-orange-200' },
-    { day: 26, title: 'Modern Open Space', color: 'bg-orange-200' },
-    { day: 27, title: 'Distributor Contract', color: 'bg-orange-200' },
-    { day: 27, title: 'Info about services', color: 'bg-orange-200' },
-    { day: 28, title: 'Global Solutions: Furnitures', color: 'bg-orange-200' },
-    { day: 28, title: 'Need 20 Desks', color: 'bg-orange-200' },
-    { day: 29, title: 'Quote for 12 Tables', color: 'bg-orange-200' },
-    { day: 30, title: 'Office Design and Architecture', color: 'bg-orange-200' },
-  ];
-
   const getEventsForDay = (day: number) => {
-    return calendarEvents.filter(event => event.day === day);
+    return getLeadsForDay(day).map(lead => ({
+      id: lead.id,
+      title: lead.lead_name || lead.subject || lead.lead_number || 'Untitled lead',
+      color: 'bg-orange-200',
+    }));
   };
 
   const isToday = (day: number) => {
-    return day === 29 && currentDate.getMonth() === 11 && currentDate.getFullYear() === 2025;
+    return isSameDay(new Date(currentDate.getFullYear(), currentDate.getMonth(), day), new Date());
   };
 
   return (
@@ -203,11 +198,11 @@ export default function LeadsCalendar() {
                   {day}
                 </div>
                 <div className="space-y-0.5">
-                  {dayEvents.map((event, idx) => (
+                  {dayEvents.map((event) => (
                     <div
-                      key={idx}
+                      key={event.id}
                       className={`text-[10px] px-1 py-0.5 rounded ${event.color} text-gray-800 truncate cursor-pointer hover:opacity-80`}
-                      onClick={() => navigate('/Leads')}
+                      onClick={() => navigate(`/leads/${event.id}`)}
                     >
                       {event.title}
                     </div>

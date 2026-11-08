@@ -24,7 +24,7 @@ export function StatCard({
   averageValue,
   barColor,
 }: StatCardProps) {
-  const maxValue = Math.max(...chartData);
+  const maxValue = Math.max(...chartData, 0);
 
   // Determine colors based on changeType or custom barColor
   const getColors = () => {
@@ -93,7 +93,8 @@ export function StatCard({
                   colors.barColor
                 )}
                 style={{
-                  height: `${(val / maxValue) * 100}%`,
+                  // Keep a small stub visible when a week (or every week) is zero.
+                  height: `${maxValue > 0 ? Math.max(6, (val / maxValue) * 100) : 6}%`,
                 }}
               />
             ))}

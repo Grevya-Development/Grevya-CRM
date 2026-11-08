@@ -128,7 +128,11 @@ export default function CategoriesList() {
       handleCancel();
     } catch (error: any) {
       console.error('Error saving category:', error);
-      toast.error('Failed to save category: ' + (error.message || 'Unknown error'));
+      toast.error(
+        error?.code === '23505'
+          ? 'A category with this name already exists'
+          : 'Failed to save category: ' + (error.message || 'Unknown error')
+      );
     } finally {
       setSaving(false);
     }

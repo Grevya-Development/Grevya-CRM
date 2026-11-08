@@ -118,7 +118,8 @@ export default function MeetingSchedule() {
                         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
                             <DialogContent className="max-w-[720px] p-0 border-none bg-transparent shadow-none [&>button]:hidden">
                                 <CreateMeetingForm
-                                    customerId={id || ""}
+                                    entityId={id || ""}
+                                    entityType="customer"
                                     onSuccess={() => {
                                         setIsCreateModalOpen(false);
                                         fetchMeetings();

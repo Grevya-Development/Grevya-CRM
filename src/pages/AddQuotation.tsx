@@ -50,7 +50,34 @@ import {
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { supabase } from '../supabase/supabaseClient';
-import { Lead, Contact, Product } from '@/types';
+import { getCurrentUserName } from '@/lib/currentUser';
+import { Product } from '@/types';
+
+// Rows from `crm_leads` (opportunities), used by the Opportunity picker.
+interface OpportunityLead {
+    id: string;
+    lead_name: string | null;
+    subject: string | null;
+    crm_customers: { name: string | null } | null;
+}
+
+// Rows from `crm_customers`, used by the Customer picker. quotations.contact_id stores crm_customers.id.
+interface CustomerOption {
+    id: string;
+    name: string | null;
+    billing_address: string | null;
+}
+
+// Formats the crm_addresses row of a customer (billing, falling back to company address).
+// The embed may come back as an object (one-to-one) or an array depending on PostgREST's detection.
+const formatCustomerAddress = (addresses: any): string | null => {
+    const a = Array.isArray(addresses) ? addresses[0] : addresses;
+    if (!a) return null;
+    const billing = [a.billing_address, a.billing_city, a.billing_state, a.billing_zip, a.billing_country].filter(Boolean);
+    const company = [a.company_address, a.company_city, a.company_state, a.company_zip, a.company_country].filter(Boolean);
+    const parts = billing.length ? billing : company;
+    return parts.length ? parts.join(', ') : null;
+};
 import { useCurrency } from '@/hooks/useCurrency';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -101,8 +128,8 @@ const AddQuotation = () => {
     const [loading, setLoading] = useState(false);
     const [fetchLogsLoading, setFetchLogsLoading] = useState(false);
     const [products, setProducts] = useState<Product[]>([]);
-    const [contacts, setContacts] = useState<Contact[]>([]);
-    const [leads, setLeads] = useState<Lead[]>([]);
+    const [contacts, setContacts] = useState<CustomerOption[]>([]);
+    const [leads, setLeads] = useState<OpportunityLead[]>([]);
     const [orderLines, setOrderLines] = useState<QuotationItem[]>([]);
     const [optionalProducts, setOptionalProducts] = useState<QuotationItem[]>([]);
     const [subtotal, setSubtotal] = useState(0);
@@ -141,8 +168,12 @@ const AddQuotation = () => {
     }, [id, lead_id]);
 
     const fetchLeads = async () => {
-        const { data } = await supabase.from('leads').select('*').order('lead_name');
-        if (data) setLeads(data);
+        const { data } = await supabase
+            .from('crm_leads')
+            .select('id, lead_name, subject, crm_customers(name)')
+            .eq('is_deleted', false)
+            .order('lead_name');
+        if (data) setLeads(data as unknown as OpportunityLead[]);
     };
 
     const fetchPaymentTerms = async () => {
@@ -191,7 +222,8 @@ const AddQuotation = () => {
                 table: 'quotation_logs',
                 filter: `quotation_id=eq.${id}`
             }, (payload: any) => {
-                setLogs(prev => [payload.new as QuotationLog, ...prev]);
+                // Skip entries already shown (a refetch may have loaded them first).
+                setLogs(prev => prev.some(l => l.id === payload.new.id) ? prev : [payload.new as QuotationLog, ...prev]);
             })
             .subscribe();
 
@@ -206,8 +238,17 @@ const AddQuotation = () => {
     };
 
     const fetchContacts = async () => {
-        const { data } = await supabase.from('contacts').select('*').order('name');
-        if (data) setContacts(data);
+        const { data } = await supabase
+            .from('crm_customers')
+            .select('id, name, addresses:crm_addresses(*)')
+            .order('name');
+        if (data) {
+            setContacts(data.map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                billing_address: formatCustomerAddress(c.addresses),
+            })));
+        }
     };
 
     const fetchQuotation = async () => {
@@ -264,20 +305,27 @@ const AddQuotation = () => {
 
     const prefillFromLead = async () => {
         const { data: lead } = await supabase
-            .from('leads')
-            .select('*, contacts(*)')
-            .eq('lead_id', lead_id)
+            .from('crm_leads')
+            .select('*, crm_customers(name, addresses:crm_addresses(*))')
+            .eq('id', lead_id)
             .single();
 
         if (lead) {
+            // lead_owner_id is an auth.users id; resolve it to an email via the get_users RPC (same as AddLeads).
+            let salesperson = '';
+            if (lead.lead_owner_id) {
+                const { data: users } = await supabase.rpc('get_users');
+                salesperson = (users || []).find((u: any) => u.id === lead.lead_owner_id)?.email || '';
+            }
+
             form.setFieldsValue({
-                contact_id: lead.contact_id,
-                opportunity_id: lead.lead_id,
+                contact_id: lead.customer_id,
+                opportunity_id: lead.id,
                 quotation_number: `QT-${dayjs().format('YYYYMMDD')}-${Math.floor(Math.random() * 1000)}`,
                 expiration_date: dayjs().add(30, 'day'),
-                salesperson: lead.lead_owner || 'Mitchell Admin',
+                salesperson,
                 source: lead.lead_source,
-                billing_address: lead.contacts?.geo_address
+                billing_address: formatCustomerAddress(lead.crm_customers?.addresses)
             });
         }
     };
@@ -288,7 +336,7 @@ const AddQuotation = () => {
             quotation_id: id,
             action,
             details,
-            performed_by: 'Mitchell Admin'
+            performed_by: await getCurrentUserName()
         });
         fetchLogs();
     };
@@ -399,7 +447,7 @@ const AddQuotation = () => {
                 invoice_id: inv.id,
                 action: 'created',
                 details: `Invoice created from Sales Order ${form.getFieldValue('quotation_number')}`,
-                performed_by: 'Mitchell Admin'
+                performed_by: await getCurrentUserName()
             });
 
             await addLog('invoice_created', `Invoice ${invNumber} created from Sales Order`);
@@ -685,8 +733,8 @@ const AddQuotation = () => {
                         onValuesChange={(changedValues) => {
                             if (changedValues.contact_id) {
                                 const c = contacts.find(contact => contact.id === changedValues.contact_id);
-                                if (c && c.geo_address) {
-                                    form.setFieldsValue({ billing_address: c.geo_address });
+                                if (c && c.billing_address) {
+                                    form.setFieldsValue({ billing_address: c.billing_address });
                                 }
                             }
                         }}
@@ -704,7 +752,7 @@ const AddQuotation = () => {
                             <Col span={12}>
                                 <Form.Item label="Customer" name="contact_id" rules={[{ required: true }]}>
                                     <Select showSearch placeholder="Select customer" optionFilterProp="children">
-                                        {contacts.map(c => <Option key={c.id} value={c.id}>{c.name} ({c.company})</Option>)}
+                                        {contacts.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                                     </Select>
                                 </Form.Item>
 
@@ -724,7 +772,7 @@ const AddQuotation = () => {
                                 </Form.Item>
                                 <Form.Item label="Opportunity" name="opportunity_id">
                                     <Select showSearch placeholder="Select opportunity" allowClear>
-                                        {leads.map(l => <Option key={l.lead_id} value={l.lead_id}>{l.lead_name} ({l.company_name})</Option>)}
+                                        {leads.map(l => <Option key={l.id} value={l.id}>{l.lead_name || l.subject}{l.crm_customers?.name ? ` (${l.crm_customers.name})` : ''}</Option>)}
                                     </Select>
                                 </Form.Item>
                             </Col>

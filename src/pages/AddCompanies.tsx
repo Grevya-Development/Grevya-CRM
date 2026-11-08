@@ -224,11 +224,11 @@ const AddCompanies = () => {
                                         </Col>
                                         <Col xs={24} md={24}>
                                             <Form.Item label="Leads Value" name="total_value">
-                                                <InputNumber
+                                                <InputNumber<number>
                                                     className="w-full"
                                                     min={0}
                                                     formatter={(value) => `₹ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                                                    parser={(value) => value?.replace(/₹\s?|(,*)/g, '')}
+                                                    parser={(value) => Number(value?.replace(/₹\s?|(,*)/g, '') || 0)}
                                                     placeholder="0.00"
                                                     onFocus={(e) => e.target.select()}
                                                 />

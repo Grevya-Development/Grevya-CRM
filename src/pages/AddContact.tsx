@@ -331,9 +331,9 @@ export default function AddContact() {
                 .from('crm_contacts')
                 .select('*')
                 .eq('id', id)
-                .single();
+                .maybeSingle(); // the id may be a customer id instead of a contact id
 
-            if (mainContactError) {
+            if (mainContactError || !mainContact) {
                 const { data: customerOnly, error: custOnlyError } = await supabase
                     .from('crm_customers')
                     .select('*')
@@ -674,6 +674,26 @@ export default function AddContact() {
     const dropDownRef = useRef<HTMLDivElement>(null);
     const [companyResults, setCompanyResults] = useState<any[]>([])
     const [showDropdown, setShowDropdown] = useState(false)
+    const companySearchRef = useRef<HTMLDivElement>(null)
+
+    // Close the company suggestions on outside click or Escape.
+    useEffect(() => {
+        if (!showDropdown) return;
+        const onMouseDown = (e: MouseEvent) => {
+            if (companySearchRef.current && !companySearchRef.current.contains(e.target as Node)) {
+                setShowDropdown(false);
+            }
+        };
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setShowDropdown(false);
+        };
+        document.addEventListener('mousedown', onMouseDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', onMouseDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [showDropdown]);
 
 
     const fetchCompanies = async (query: string) => {
@@ -1608,7 +1628,7 @@ export default function AddContact() {
                             </div>
                             <div className="flex-1 min-w-0 space-y-4">
                                 <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center w-full">
-                                    <div className="w-full xl:w-[280px]">
+                                    <div ref={companySearchRef} className="relative w-full xl:w-[280px]">
                                         <FloatingLabelInput
                                             disabled={isViewMode}
                                             label="M/S Company Name / Individual Name"

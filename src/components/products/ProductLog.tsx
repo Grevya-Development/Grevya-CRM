@@ -61,7 +61,7 @@ export const ProductLog: React.FC<ProductLogProps> = ({ productId, productName, 
             const newLog = {
                 product_id: productId,
                 user_id: user?.id || null,
-                user_name: user?.email?.split('@')[0] || 'Mitchell Admin',
+                user_name: user?.email?.split('@')[0] || 'Unknown user',
                 action: activeTab === 'note' ? 'note' : 'note',
                 content: inputValue.trim(),
             };

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { PersistentToolbar } from '@/components/shared/PersistentToolbar';
 import { Separator } from '@/components/ui/separator';
+import { LEAD_STAGES_CONFIG } from '@/lib/lead-constants';
 
 export default function LeadsGraph() {
   const navigate = useNavigate();
@@ -19,8 +20,9 @@ export default function LeadsGraph() {
   const fetchLeads = async () => {
     try {
       const { data, error } = await supabase
-        .from('leads')
+        .from('crm_leads')
         .select('*')
+        .or('is_deleted.eq.false,is_deleted.is.null')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -36,12 +38,7 @@ export default function LeadsGraph() {
     fetchLeads();
   }, []);
 
-  const stages = [
-    { key: 'Qualification', label: 'Qualification', color: 'bg-amber-500' },
-    { key: 'Need Analysis', label: 'Need Analysis', color: 'bg-purple-500' },
-    { key: 'Value Proposition', label: 'Value Proposition', color: 'bg-primary' },
-    { key: 'Won', label: 'Won', color: 'bg-green-500' }
-  ];
+  const stages = LEAD_STAGES_CONFIG.map(({ name, color }) => ({ key: name, label: name, color }));
 
   const getLeadsByStage = (stage: string) => {
     return leads.filter(lead => lead.lead_stage === stage);
@@ -84,7 +81,7 @@ export default function LeadsGraph() {
             <h3 className="text-xl font-bold">Pipeline</h3>
             <div className="flex items-center gap-2 text-sm">
               <div className="w-3 h-3 rounded-sm bg-primary"></div>
-              <span>Mitchell Admin</span>
+              <span>Leads</span>
             </div>
           </div>
 
@@ -183,7 +180,10 @@ export default function LeadsGraph() {
               <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
                 <span className="text-sm font-medium">In Pipeline</span>
                 <span className="text-lg font-bold text-primary">
-                  ₹{(getTotalByStage('Qualification') + getTotalByStage('Need Analysis') + getTotalByStage('Value Proposition')).toLocaleString('en-IN')}
+                  ₹{stages
+                    .filter(stage => stage.key !== 'Won' && stage.key !== 'Lost')
+                    .reduce((sum, stage) => sum + getTotalByStage(stage.key), 0)
+                    .toLocaleString('en-IN')}
                 </span>
               </div>
             </div>

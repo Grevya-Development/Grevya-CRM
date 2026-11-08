@@ -17,8 +17,8 @@ export function TasksList() {
       const { data: salesperson } = await supabase
         .from('crm_salesperson')
         .select('id')
-        .eq('user_id', uid)  // adjust if your FK column name differs
-        .single();
+        .eq('user_id', uid)
+        .maybeSingle(); // users without a salesperson record are fine
 
       let query = supabase
         .from('crm_tasks')

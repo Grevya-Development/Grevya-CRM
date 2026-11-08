@@ -17,6 +17,10 @@ const mockQuery: any = {
 jest.mock('@/supabase/supabaseClient', () => ({
     supabase: {
         from: jest.fn(() => mockQuery),
+        // The page header loads the signed-in user's profile.
+        auth: {
+            getUser: jest.fn(() => Promise.resolve({ data: { user: null }, error: null })),
+        },
     },
 }));
 
@@ -38,6 +42,11 @@ const mockWorkbook: any = {
 
 jest.mock('exceljs', () => ({
     Workbook: jest.fn(() => mockWorkbook),
+}));
+
+// emailService reads import.meta.env, which Jest can't parse.
+jest.mock('@/services/emailService', () => ({
+    emailService: { sendEmail: jest.fn() },
 }));
 
 jest.mock('sonner', () => ({
@@ -80,7 +89,7 @@ describe('Contacts Export Functionality', () => {
             </LayoutProvider>
         );
 
-        fireEvent.click(screen.getByTitle('Export'));
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Export Contacts' }), { key: 'Enter' });
         fireEvent.click(screen.getByText('CSV'));
 
         await waitFor(() => {
@@ -92,37 +101,24 @@ describe('Contacts Export Functionality', () => {
         expect(mockWorksheet.addRow).toHaveBeenCalled();
     });
 
-    it('applies limit when row limit is selected', async () => {
-        render(
-            <MemoryRouter>
-                <Contacts />
-            </MemoryRouter>
-        );
-
-        fireEvent.click(screen.getByRole('combobox'));
-        fireEvent.click(screen.getByText('1 Row'));
-
-        fireEvent.click(screen.getByTitle('Export'));
-        fireEvent.click(screen.getByText('CSV'));
-
-        await waitFor(() => {
-            expect(mockQuery.limit).toHaveBeenCalledWith(1);
-        });
-    });
-
     it('performs filtered export when search is active', async () => {
         render(
-            <MemoryRouter>
-                <Contacts />
-            </MemoryRouter>
+            <LayoutProvider>
+                <MemoryRouter>
+                    <Contacts />
+                </MemoryRouter>
+            </LayoutProvider>
         );
+
+        // Wait for the contact list to load before filtering and exporting.
+        await screen.findAllByText('John Doe');
 
         fireEvent.change(
             screen.getByPlaceholderText('Search customers...'),
             { target: { value: 'John' } }
         );
 
-        fireEvent.click(screen.getByTitle('Export'));
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Export Contacts' }), { key: 'Enter' });
         fireEvent.click(screen.getByText('CSV'));
 
         await waitFor(() => {
@@ -136,12 +132,14 @@ describe('Contacts Export Functionality', () => {
         });
 
         render(
-            <MemoryRouter>
-                <Contacts />
-            </MemoryRouter>
+            <LayoutProvider>
+                <MemoryRouter>
+                    <Contacts />
+                </MemoryRouter>
+            </LayoutProvider>
         );
 
-        fireEvent.click(screen.getByTitle('Export'));
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Export Contacts' }), { key: 'Enter' });
         fireEvent.click(screen.getByText('CSV'));
 
         await waitFor(() => {

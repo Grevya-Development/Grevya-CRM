@@ -155,7 +155,7 @@ export function ContactsTable({ contacts, loading, onUpdate, onDelete, columns, 
       onDelete(contactToDelete);
       toast({
         title: 'Success',
-        description: 'Customer moved to trash (soft delete)',
+        description: 'Contact deleted',
         variant: 'default',
       });
     } catch (error) {
@@ -187,7 +187,7 @@ export function ContactsTable({ contacts, loading, onUpdate, onDelete, columns, 
               setIsEmailComposerOpen(true);
             }}
           >
-            {toLower(contact.email)}
+            {contact.email ? contact.email.toLowerCase() : "-"}
           </Button>
         );
 
@@ -512,7 +512,7 @@ export function ContactsTable({ contacts, loading, onUpdate, onDelete, columns, 
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will move the customer to trash and they will no longer appear in the table.
+              This will permanently delete this contact person. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
