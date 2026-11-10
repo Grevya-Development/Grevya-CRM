@@ -832,7 +832,7 @@ export default function Contacts() {
           isOpen={isImportOpen}
           onClose={() => setIsImportOpen(false)}
           onImportSuccess={() => {
-            setIsImportOpen(false);
+            // Keep the dialog open so the results (and any failed rows) stay visible.
             fetchContacts();
           }}
         />

@@ -14,23 +14,38 @@ import {
 } from "@/components/ui/dialog";
 import ExcelJS from 'exceljs';
 
-interface TableColumn {
-    name: string;
-    isNullable: boolean;
-    defaultValue: string | null;
-}
+type Section = 'customer' | 'address' | 'contact';
 
-interface DbSchema {
-    customers: TableColumn[];
-    addresses: TableColumn[];
-    contacts: TableColumn[];
-}
-
-const tableFriendlyNames: Record<string, string> = {
-    'crm_customers': 'Customer',
-    'crm_addresses': 'Address',
-    'crm_contacts': 'Contact'
+/**
+ * Columns a file can fill, per table. Kept in step with the crm_customers,
+ * crm_addresses and crm_contacts tables. (The app's public key can't read the
+ * database schema, so this list can't be fetched at runtime.)
+ */
+const IMPORT_COLUMNS: Record<Section, string[]> = {
+    customer: [
+        'name', 'customer_type', 'industry', 'website_link', 'linkedin_url', 'gst_details',
+        'credit_limit', 'payment_terms', 'annual_revenue', 'lead_source', 'priority',
+        'engagement_probability', 'account_status',
+    ],
+    address: [
+        'company_address', 'company_city', 'company_state', 'company_country', 'company_zip',
+        'billing_address', 'billing_city', 'billing_state', 'billing_country', 'billing_zip',
+        'shipping_address', 'shipping_city', 'shipping_state', 'shipping_country', 'shipping_zip',
+    ],
+    contact: ['name', 'designation', 'email', 'mobile_no', 'telephone', 'preferred_type', 'contact_type'],
 };
+
+const NUMERIC_COLUMNS = new Set(['customer.credit_limit', 'customer.annual_revenue', 'customer.engagement_probability']);
+const LABEL_OVERRIDES: Record<string, string> = {
+    website_link: 'Website',
+    linkedin_url: 'LinkedIn URL',
+    gst_details: 'GST Details',
+    company_zip: 'Company PIN/ZIP',
+    billing_zip: 'Billing PIN/ZIP',
+    shipping_zip: 'Shipping PIN/ZIP',
+    engagement_probability: 'Engagement Probability (%)',
+};
+const SECTION_LABEL: Record<Section, string> = { customer: 'Customer', address: 'Address', contact: 'Contact' };
 
 const toFriendly = (str: string) =>
     str.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
@@ -56,7 +71,7 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
     const [isImporting, setIsImporting] = useState(false);
     const [importResults, setImportResults] = useState<{ success: number; failed: number } | null>(null);
     const [syncDetails, setSyncDetails] = useState<{ data: any; status: 'success' | 'error'; error?: string }[]>([]);
-    const [schema, setSchema] = useState<DbSchema | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Reset state when modal opens
     useEffect(() => {
@@ -68,101 +83,18 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
         }
     }, [isOpen]);
 
-    useEffect(() => {
-        if (!isOpen) return;
-
-        const fetchSchema = async () => {
-            try {
-                const supabaseUrl = (supabase as any).supabaseUrl;
-                const supabaseKey = (supabase as any).supabaseKey;
-                const response = await fetch(`${supabaseUrl}/rest/v1/`, {
-                    headers: {
-                        'apikey': supabaseKey,
-                        'Authorization': `Bearer ${supabaseKey}`
-                    }
-                });
-
-                if (!response.ok) throw new Error("Failed to fetch OpenAPI spec");
-
-                const spec = await response.json();
-                const definitions = spec.definitions || {};
-
-                const extractCols = (tableName: string): TableColumn[] => {
-                    const def = definitions[tableName];
-                    if (!def || !def.properties) return [];
-
-                    const required = def.required || [];
-                    return Object.keys(def.properties).map(colName => ({
-                        name: colName,
-                        isNullable: !required.includes(colName),
-                        defaultValue: null
-                    }));
-                };
-
-                setSchema({
-                    customers: extractCols('crm_customers'),
-                    addresses: extractCols('crm_addresses'),
-                    contacts: extractCols('crm_contacts')
-                });
-            } catch (err) {
-                console.error("Failed to fetch schema:", err);
-                toast.error("Sync failed. Contact support.");
-            }
-        };
-        fetchSchema();
-    }, [isOpen]);
-
-    const getDynamicHeaders = (): { label: string; path: string }[] => {
-        if (!schema) return [];
-        const result: { label: string; path: string }[] = [];
-
-        const isExcluded = (name: string) => {
-            const n = name.toLowerCase();
-            return (
-                n === 'id' ||
-                n.endsWith('_at') ||
-                n.endsWith('_id') ||
-                n.includes('image') ||
-                n.includes('url') ||
-                n.includes('link') ||
-                n.includes('scanned_card') ||
-                n.startsWith('is_') ||
-                n.startsWith('has_') ||
-                n.startsWith('enable_')
-            );
-        };
-
-        schema.customers.filter(c => !isExcluded(c.name)).forEach(c => result.push({ label: `Customer | ${toFriendly(c.name)}`, path: `customer.${c.name}` }));
-        schema.addresses.filter(c => !isExcluded(c.name)).forEach(c => result.push({ label: `Address | ${toFriendly(c.name)}`, path: `address.${c.name}` }));
-        schema.contacts.filter(c => !isExcluded(c.name)).forEach(c => result.push({ label: `Contact | ${toFriendly(c.name)}`, path: `contact.${c.name}` }));
-
-        return result;
-    };
+    const getDynamicHeaders = (): { label: string; path: string }[] =>
+        (Object.keys(IMPORT_COLUMNS) as Section[]).flatMap(section =>
+            IMPORT_COLUMNS[section].map(col => ({
+                label: `${SECTION_LABEL[section]} | ${LABEL_OVERRIDES[col] ?? toFriendly(col)}`,
+                path: `${section}.${col}`,
+            }))
+        );
 
     const handleExportTemplate = async () => {
-        if (!schema) {
-            toast.error("Schema not yet loaded. Please wait a moment.");
-            return;
-        }
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('CRM Import Template');
         const dynamicHeaders = getDynamicHeaders();
-        const headerLabels = dynamicHeaders.map(h => h.label);
-
-        const headerRow = worksheet.addRow(headerLabels);
-        headerRow.eachCell((cell) => {
-            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FF5D4461' }
-            };
-            cell.alignment = { vertical: 'middle', horizontal: 'center' };
-            cell.border = {
-                bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } }
-            };
-        });
 
         worksheet.columns = dynamicHeaders.map(h => ({
             header: h.label,
@@ -170,95 +102,133 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
             width: Math.max(h.label.length + 8, 22)
         }));
 
+        const headerRow = worksheet.getRow(1);
+        headerRow.eachCell((cell) => {
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B1F3A' } };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.border = { bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } } };
+        });
+        worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = window.URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
-        anchor.download = `crm_focused_template_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        anchor.download = `grevya_customers_import_template.xlsx`;
+        document.body.appendChild(anchor);
         anchor.click();
-        window.URL.revokeObjectURL(url);
+        anchor.remove();
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 
-        toast.success("Focused Template downloaded");
+        toast.success("Template downloaded. Customer | Name and Contact | Email are required.");
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!schema) {
-            toast.error("Database schema not ready. Please try again in 2 seconds.");
+    const processFile = (uploadedFile: File) => {
+        if (!/\.(xlsx|xls|csv)$/i.test(uploadedFile.name)) {
+            toast.error("Unsupported file. Please upload a .xlsx, .xls or .csv file.");
             return;
         }
-
-        const uploadedFile = e.target.files?.[0];
-        if (!uploadedFile) return;
 
         const reader = new FileReader();
         reader.onload = (evt) => {
             try {
-                const bstr = evt.target?.result;
-                const wb = XLSX.read(bstr, { type: 'binary' });
-                const wsname = wb.SheetNames[0];
-                const ws = wb.Sheets[wsname];
-                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                const wb = XLSX.read(evt.target?.result, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
 
-                if (data.length < 1) {
-                    toast.error("The file appears to be empty");
+                if (data.length < 2) {
+                    toast.error("The file has no data rows. Add records below the header row.");
                     return;
                 }
 
-                const fileLabels = (data[0] as string[]).map(l => l?.trim());
+                const fileLabels = (data[0] || []).map(l => String(l ?? '').trim());
                 const dynamicHeaders = getDynamicHeaders();
+                const findHeader = (label: string) =>
+                    dynamicHeaders.find(dh => dh.label.toLowerCase() === label.toLowerCase());
 
-                const invalidLabels = fileLabels.filter(label => {
-                    if (!label) return false;
-                    const matched = dynamicHeaders.find(dh => dh.label.toLowerCase() === label.toLowerCase());
-                    return !matched;
-                });
-
+                const invalidLabels = fileLabels.filter(label => label && !findHeader(label));
                 if (invalidLabels.length > 0) {
-                    toast.error(`Invalid Headers Found: ${invalidLabels.slice(0, 2).join(', ')}. Please use the Focused Template.`);
+                    toast.error(`Unknown column${invalidLabels.length > 1 ? 's' : ''}: ${invalidLabels.slice(0, 3).join(', ')}. Please use the downloaded template.`);
+                    return;
+                }
+                if (!fileLabels.some(l => findHeader(l)?.path === 'customer.name') ||
+                    !fileLabels.some(l => findHeader(l)?.path === 'contact.email')) {
+                    toast.error("The file must include the 'Customer | Name' and 'Contact | Email' columns.");
                     return;
                 }
 
-                const rows = data.slice(1) as any[][];
+                const rows = data.slice(1);
+                const errors: string[] = [];
+                const mappedData: any[] = [];
 
-                const mappedData = rows.map((row, index) => {
-                    if (!row || row.length === 0 || row.every(cell => !cell)) return null;
+                rows.forEach((row, index) => {
+                    if (!row || row.every(cell => String(cell ?? '').trim() === '')) return;
 
                     const obj: any = {};
                     fileLabels.forEach((label, labelIndex) => {
-                        const matched = dynamicHeaders.find(dh => dh.label.toLowerCase() === label?.toLowerCase());
-                        if (matched) {
-                            obj[matched.path] = row[labelIndex];
-                        }
+                        const matched = label ? findHeader(label) : undefined;
+                        if (!matched) return;
+                        const raw = row[labelIndex];
+                        const value = typeof raw === 'string' ? raw.trim() : raw;
+                        if (value === '' || value === null || value === undefined) return;
+                        obj[matched.path] = value;
                     });
 
+                    const rowNo = index + 2;
                     if (!obj['customer.name'] || !obj['contact.email']) {
-                        return { _rowError: `Row ${index + 2}: Missing mandatory 'Customer | Name' or 'Contact | Email'` };
+                        errors.push(`Row ${rowNo}: 'Customer | Name' and 'Contact | Email' are required`);
+                        return;
                     }
+                    for (const path of NUMERIC_COLUMNS) {
+                        if (obj[path] === undefined) continue;
+                        const n = Number(String(obj[path]).replace(/[,\s₹$%]/g, ''));
+                        if (isNaN(n)) {
+                            errors.push(`Row ${rowNo}: '${findHeaderByPath(path)}' must be a number`);
+                            return;
+                        }
+                        obj[path] = path === 'customer.engagement_probability' ? Math.round(n) : n;
+                    }
+                    obj['customer.name'] = String(obj['customer.name']);
+                    obj['contact.email'] = String(obj['contact.email']);
+                    mappedData.push(obj);
+                });
 
-                    return obj;
-                }).filter(Boolean);
-
-                const rowErrors = mappedData.filter((d: any) => d._rowError);
-                if (rowErrors.length > 0) {
-                    toast.error((rowErrors[0] as any)._rowError);
+                if (errors.length > 0) {
+                    toast.error(errors.length > 1 ? `${errors[0]} (and ${errors.length - 1} more)` : errors[0]);
                     return;
                 }
-
                 if (mappedData.length === 0) {
-                    toast.error("No valid records found after validation.");
+                    toast.error("No records found in the file.");
                     return;
                 }
 
                 setPreviewData(mappedData);
                 setStep(3);
-                toast.success(`Validated ${mappedData.length} records`);
+                toast.success(`Validated ${mappedData.length} record${mappedData.length > 1 ? 's' : ''}`);
             } catch (error) {
                 console.error("Parsing error:", error);
-                toast.error("Failed to parse file. Please use a valid template.");
+                toast.error("Couldn't read this file. Please use the downloaded template.");
             }
         };
-        reader.readAsBinaryString(uploadedFile);
+        reader.readAsArrayBuffer(uploadedFile);
+    };
+
+    const findHeaderByPath = (path: string) =>
+        getDynamicHeaders().find(h => h.path === path)?.label ?? path;
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = ''; // let the same file be picked again after fixing it
+        if (file) processFile(file);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) processFile(file);
     };
 
     const sanitize = (obj: any) => {
@@ -292,6 +262,9 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
                     if (key.startsWith('contact.')) contactData[key.replace('contact.', '')] = value;
                 });
 
+                if (!customerData.customer_type) customerData.customer_type = 'Prospect';
+                if (!customerData.account_status) customerData.account_status = 'active';
+
                 const { data: customer, error: custError } = await supabase
                     .from('crm_customers')
                     .insert([sanitize(customerData)])
@@ -300,7 +273,7 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
 
                 if (custError) {
                     console.error("Customer sync failed:", custError);
-                    details.push({ data: row, status: 'error', error: `Customer: ${custError.message}` });
+                    details.push({ data: row, status: 'error', error: custError.code === '23505' ? 'A customer with this name already exists' : `Customer: ${custError.message}` });
                     failCount++;
                     continue;
                 }
@@ -308,12 +281,12 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
                 const customerId = customer.id;
 
                 try {
-                    const sanitizedAddress = sanitize({ ...addressData, customer_id: customerId });
-                    const { error: addrError } = await supabase
-                        .from('crm_addresses')
-                        .insert([sanitizedAddress]);
-
-                    if (addrError) throw addrError;
+                    if (Object.keys(sanitize(addressData)).length > 0) {
+                        const { error: addrError } = await supabase
+                            .from('crm_addresses')
+                            .insert([sanitize({ ...addressData, customer_id: customerId })]);
+                        if (addrError) throw addrError;
+                    }
 
                     const sanitizedContact = sanitize({ ...contactData, customer_id: customerId });
                     const { error: contError } = await supabase
@@ -335,11 +308,12 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
             setImportResults({ success: successCount, failed: failCount });
             setSyncDetails(details);
             setStep(4);
-            toast.success("Import processed");
+            if (failCount === 0) toast.success(`Imported ${successCount} customer${successCount === 1 ? '' : 's'}`);
+            else toast.warning(`Imported ${successCount}, ${failCount} failed. See details below.`);
             if (onImportSuccess) onImportSuccess();
         } catch (error) {
             console.error("Import error:", error);
-            toast.error("Critical error during synchronization");
+            toast.error("Import stopped unexpectedly. Please try again.");
         } finally {
             setIsImporting(false);
         }
@@ -359,8 +333,13 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
                             </p>
                         </div>
 
-                        <div className="w-full relative group">
-                            <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 flex flex-col items-center justify-center transition-colors group-hover:border-primary/50 group-hover:bg-slate-50/50">
+                        <div
+                            className="w-full relative group"
+                            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                            onDragLeave={() => setIsDragging(false)}
+                            onDrop={handleDrop}
+                        >
+                            <div className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center transition-colors group-hover:border-primary/50 group-hover:bg-slate-50/50 ${isDragging ? 'border-primary bg-primary/5' : 'border-slate-200'}`}>
                                 <Upload className="h-10 w-10 text-slate-300 mb-4 group-hover:text-primary transition-colors" />
                                 <label className="cursor-pointer">
                                     <span className="bg-primary text-primary-foreground hover:bg-primary/90 shadow h-9 px-4 py-2 rounded-md text-sm font-medium transition-colors">
@@ -447,8 +426,8 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
                             </div>
                             <h3 className="text-xl font-bold text-slate-900">Import Completed</h3>
                             <p className="text-sm text-slate-500">
-                                Successfully imported <span className="font-bold text-slate-900">{importResults?.success}</span> records.
-                                {importResults?.failed ? ` Failed: ${importResults.failed}` : ''}
+                                Successfully imported <span className="font-bold text-slate-900">{importResults?.success}</span> {importResults?.success === 1 ? 'record' : 'records'}.
+                                {importResults?.failed ? ` ${importResults.failed} failed.` : ''}
                             </p>
                         </div>
 
@@ -461,7 +440,7 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
                             </Button>
                         </div>
 
-                        {importResults?.failed && importResults.failed > 0 && (
+                        {importResults && importResults.failed > 0 && (
                             <div className="border rounded-md max-h-[200px] overflow-auto">
                                 <Table>
                                     <TableHeader>
