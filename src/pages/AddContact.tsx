@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Camera, Plus, Trash2, FileText, Truck, BarChart3, Share2, Paperclip, Calendar, PlayCircle, Clock, AlertCircle, CheckCircle2, CalculatorIcon, ClockIcon, Upload, CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { EMAIL_REGEX, PHONE_REGEX } from '@/lib/constants';
+import { EMAIL_REGEX, PHONE_REGEX, normalizeMobile } from '@/lib/constants';
 import { supabase } from '@/supabase/supabaseClient';
 import { CustomerFormData } from '@/types';
 import { Header } from '@/components/layout/Header';
@@ -43,6 +43,17 @@ interface ContactPerson {
     address_type: string;
 }
 
+const CUSTOMER_TYPES = [
+    { label: 'Individual', value: 'Individual' },
+    { label: 'Company', value: 'Company' },
+    { label: 'Partner', value: 'Partner' },
+    { label: 'Vendor', value: 'Vendor' },
+];
+
+/** Keep a saved value selectable even if it isn't one of the standard options. */
+const withCurrent = (items: { label: string; value: string }[], current?: string) =>
+    current && !items.some(i => i.value === current) ? [...items, { label: current, value: current }] : items;
+
 const validateTelephone = (telephone: string) => {
     log.debug('validateTelephone called', { telephone });
     if (!telephone) return true;
@@ -58,6 +69,17 @@ export default function AddContact() {
     const { id } = useParams();
     const isViewMode = location.pathname.includes('/view/');
     const isEditMode = !!id && !isViewMode;
+    const [activeTab, setActiveTab] = useState('address_info');
+    const [salesOwners, setSalesOwners] = useState<{ label: string; value: string }[]>([]);
+
+    useEffect(() => {
+        supabase.rpc('get_users').then(({ data }) => {
+            setSalesOwners(((data as { id: string; full_name: string | null; email: string }[]) || []).map(u => ({
+                value: u.id,
+                label: u.full_name || u.email,
+            })));
+        });
+    }, []);
     const [loading, setLoading] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
     const isSubmitting = useRef(false);
@@ -503,7 +525,7 @@ export default function AddContact() {
             multi_currency: customer.is_multi_currency ? 'Yes' : 'No',
             annual_revenue: customer.annual_revenue?.toString() || '',
             sales_owner: '',
-            priority: customer.priority || '',
+            priority: customer.priority || 'medium', // older/imported records may have none
             probability: customer.engagement_probability?.toString() || '',
         };
         setDetailsData(newDetailsData);
@@ -579,7 +601,7 @@ export default function AddContact() {
                 id: c.id,
                 name: c.name || '',
                 designation: c.designation || '',
-                mobile: c.mobile_no || '',
+                mobile: normalizeMobile(c.mobile_no),
                 telephone: c.telephone || '',
                 email: c.email || '',
                 preferred_type: c.preferred_type || 'Email',
@@ -996,7 +1018,8 @@ export default function AddContact() {
         log.debug('updateContactPerson called');
         let newValue = value;
         if (field === 'mobile' || field === 'telephone') {
-            newValue = value.replace(/\D/g, '').slice(0, field === 'mobile' ? 10 : 12);
+            // Accept pasted numbers like "+91 98765 43210" for mobile.
+            newValue = field === 'mobile' ? normalizeMobile(value).slice(0, 10) : value.replace(/\D/g, '').slice(0, 12);
         }
 
         setContactPersons(contactPersons.map(cp => cp.id === id ? { ...cp, [field]: newValue } : cp));
@@ -1272,13 +1295,18 @@ export default function AddContact() {
                 return;
             }
 
-            if (!formData.street?.trim()) { toast.error("Address Line 1 (Top) is required"); setLoading(false); return; }
-            if (!formData.country) { toast.error("Country (Top) is required"); setLoading(false); return; }
-            if (!formData.state) { toast.error("State (Top) is required"); setLoading(false); return; }
-            if (!formData.city) { toast.error("City (Top) is required"); setLoading(false); return; }
-            if (!formData.zip?.trim()) { toast.error("Pincode (Top) is required"); setLoading(false); return; }
+            if (!formData.street?.trim()) { toast.error("Address Line 1 is required (company address at the top)"); setLoading(false); return; }
+            if (!formData.country) { toast.error("Country is required (company address at the top)"); setLoading(false); return; }
+            if (!formData.state) { toast.error("State is required (company address at the top)"); setLoading(false); return; }
+            if (!formData.city) { toast.error("City is required (company address at the top)"); setLoading(false); return; }
+            if (!formData.zip?.trim()) { toast.error("Pincode is required (company address at the top)"); setLoading(false); return; }
 
-            if (!detailsData.priority) { toast.error("Priority is required"); setLoading(false); return; }
+            if (!detailsData.priority) {
+                setActiveTab('details');
+                toast.error("Priority is required — set it in the Details tab");
+                setLoading(false);
+                return;
+            }
 
 
 
@@ -1300,18 +1328,17 @@ export default function AddContact() {
             for (const person of contactPersons) {
                 if (!person.name?.trim()) { toast.error("Contact person name is required"); setLoading(false); return; }
                 if (!person.designation?.trim()) { toast.error(`Designation is required for ${person.name || 'contact'}`); setLoading(false); return; }
-                if (!person.mobile?.trim()) { toast.error(`Mobile no is required for ${person.name || 'contact'}`); setLoading(false); return; }
                 if (!person.email?.trim()) { toast.error(`Email address is required for ${person.name || 'contact'}`); setLoading(false); return; }
                 if (!person.preferred_type) { toast.error(`Preferred Type is required for ${person.name || 'contact'}`); setLoading(false); return; }
                 if (!person.address_type) { toast.error(`Address Type is required for ${person.name || 'contact'}`); setLoading(false); return; }
 
                 if (person.email && !EMAIL_REGEX.test(person.email)) {
-                    toast.error(`Invalid email for contact person: ${person.name}`);
+                    toast.error(`Email address for ${person.name || 'contact'} is not valid (e.g. name@company.com)`);
                     setLoading(false);
                     return;
                 }
                 if (person.mobile && !PHONE_REGEX.test(person.mobile)) {
-                    toast.error(`Invalid mobile for contact person: ${person.name}`);
+                    toast.error(`Mobile no for ${person.name || 'contact'} must be 10 digits`);
                     setLoading(false);
                     return;
                 }
@@ -1656,12 +1683,7 @@ export default function AddContact() {
                                     <div className="w-full xl:w-[200px]">
                                         <FloatingLabelSelect
                                             disabled={isViewMode}
-                                            items={[
-                                                { label: 'Individual', value: 'Individual' },
-                                                { label: 'Company', value: 'Company' },
-                                                { label: 'Partner', value: 'Partner' },
-                                                { label: 'Vendor', value: 'Vendor' }
-                                            ]}
+                                            items={withCurrent(CUSTOMER_TYPES, formData.contact_type)}
                                             value={formData.contact_type}
                                             onValueChange={(v) => setFormData({ ...formData, contact_type: v })}
                                             placeholder="Customer Type"
@@ -1810,8 +1832,7 @@ export default function AddContact() {
                                             value={person.mobile}
                                             onChange={(e) => updateContactPerson(person.id, 'mobile', e.target.value)}
                                             validationType="phone"
-                                            maxLength={10}
-                                            required
+                                            inputMode="numeric"
                                         />
                                         <FloatingLabelInput
                                             disabled={isViewMode}
@@ -1863,7 +1884,7 @@ export default function AddContact() {
                             </div>
                         </div>
                     </Card>
-                    <Tabs defaultValue="address_info" className="w-full space-y-0 flex flex-col">
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-0 flex flex-col">
                         <div className="flex items-center shrink-0 w-full overflow-x-auto no-scrollbar">
                             <TabsList className="bg-transparent p-0 w-auto flex justify-start items-end h-[46px] gap-[1px] min-w-max">
                                 <TabsTrigger
@@ -2201,8 +2222,9 @@ export default function AddContact() {
                                                     <SelectValue placeholder="" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="owner1">Sales Owner 1</SelectItem>
-                                                    <SelectItem value="owner2">Sales Owner 2</SelectItem>
+                                                    {salesOwners.map(o => (
+                                                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                                                    ))}
                                                 </SelectContent>
                                             </Select>
                                             <label

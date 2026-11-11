@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Download, CheckCircle2, AlertCircle, Loader2, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/supabase/supabaseClient';
+import { EMAIL_REGEX, PHONE_REGEX, normalizeMobile } from '@/lib/constants';
 import { ColumnDefinition } from '@/services/userSettings';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -23,7 +24,7 @@ type Section = 'customer' | 'address' | 'contact';
  */
 const IMPORT_COLUMNS: Record<Section, string[]> = {
     customer: [
-        'name', 'customer_type', 'industry', 'website_link', 'linkedin_url', 'gst_details',
+        'name', 'customer_type', 'sales_owner', 'industry', 'website_link', 'linkedin_url', 'gst_details',
         'credit_limit', 'payment_terms', 'annual_revenue', 'lead_source', 'priority',
         'engagement_probability', 'account_status',
     ],
@@ -35,6 +36,14 @@ const IMPORT_COLUMNS: Record<Section, string[]> = {
     contact: ['name', 'designation', 'email', 'mobile_no', 'telephone', 'preferred_type', 'contact_type'],
 };
 
+/** Columns limited to the options the customer form offers (matched case-insensitively). */
+const CHOICES: Record<string, string[]> = {
+    'customer.customer_type': ['Individual', 'Company', 'Partner', 'Vendor', 'Prospect'],
+    'customer.priority': ['high', 'medium', 'low'],
+    'customer.account_status': ['active', 'inactive'],
+    'contact.preferred_type': ['Email', 'WhatsApp', 'Phone'],
+};
+
 const NUMERIC_COLUMNS = new Set(['customer.credit_limit', 'customer.annual_revenue', 'customer.engagement_probability']);
 const LABEL_OVERRIDES: Record<string, string> = {
     website_link: 'Website',
@@ -44,6 +53,7 @@ const LABEL_OVERRIDES: Record<string, string> = {
     billing_zip: 'Billing PIN/ZIP',
     shipping_zip: 'Shipping PIN/ZIP',
     engagement_probability: 'Engagement Probability (%)',
+    sales_owner: 'Sales Owner (name or email)',
 };
 const SECTION_LABEL: Record<Section, string> = { customer: 'Customer', address: 'Address', contact: 'Contact' };
 
@@ -72,6 +82,12 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
     const [importResults, setImportResults] = useState<{ success: number; failed: number } | null>(null);
     const [syncDetails, setSyncDetails] = useState<{ data: any; status: 'success' | 'error'; error?: string }[]>([]);
     const [isDragging, setIsDragging] = useState(false);
+    const [users, setUsers] = useState<{ id: string; email: string; full_name: string | null }[]>([]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        supabase.rpc('get_users').then(({ data }) => setUsers((data as typeof users) || []));
+    }, [isOpen]);
 
     // Reset state when modal opens
     useEffect(() => {
@@ -191,7 +207,37 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
                         obj[path] = path === 'customer.engagement_probability' ? Math.round(n) : n;
                     }
                     obj['customer.name'] = String(obj['customer.name']);
-                    obj['contact.email'] = String(obj['contact.email']);
+                    obj['contact.email'] = String(obj['contact.email']).trim();
+                    if (!EMAIL_REGEX.test(obj['contact.email'])) {
+                        errors.push(`Row ${rowNo}: '${obj['contact.email']}' is not a valid email`);
+                        return;
+                    }
+                    if (obj['contact.mobile_no'] !== undefined) {
+                        const mobile = normalizeMobile(obj['contact.mobile_no']);
+                        if (!PHONE_REGEX.test(mobile)) {
+                            errors.push(`Row ${rowNo}: Mobile No '${obj['contact.mobile_no']}' must be a 10-digit number`);
+                            return;
+                        }
+                        obj['contact.mobile_no'] = mobile;
+                    }
+                    for (const [path, allowed] of Object.entries(CHOICES)) {
+                        if (obj[path] === undefined) continue;
+                        const match = allowed.find(a => a.toLowerCase() === String(obj[path]).trim().toLowerCase());
+                        if (!match) {
+                            errors.push(`Row ${rowNo}: '${findHeaderByPath(path)}' must be one of ${allowed.join(', ')}`);
+                            return;
+                        }
+                        obj[path] = match;
+                    }
+                    if (obj['customer.sales_owner'] !== undefined) {
+                        const key = String(obj['customer.sales_owner']).trim().toLowerCase();
+                        const owner = users.find(u => u.email.toLowerCase() === key || (u.full_name || '').toLowerCase() === key);
+                        if (!owner) {
+                            errors.push(`Row ${rowNo}: Sales Owner '${obj['customer.sales_owner']}' isn't a CRM user`);
+                            return;
+                        }
+                        obj['customer.sales_owner'] = owner.id;
+                    }
                     mappedData.push(obj);
                 });
 
@@ -264,6 +310,9 @@ export default function ImportContacts({ isOpen, onClose, onImportSuccess }: Imp
 
                 if (!customerData.customer_type) customerData.customer_type = 'Prospect';
                 if (!customerData.account_status) customerData.account_status = 'active';
+                if (!customerData.priority) customerData.priority = 'medium';
+                if (customerData.sales_owner) customerData.sales_person_id = customerData.sales_owner;
+                delete customerData.sales_owner;
 
                 const { data: customer, error: custError } = await supabase
                     .from('crm_customers')
